@@ -44,17 +44,20 @@ function env_set()
         % Get segmentation mark groudtruth (Instance id looks broken)
         ImagePath = strcat(base_path, GT_seg_path, f, '.png');
         [label, instance] = getIDs(ImagePath);
-        img = imread(strcat(base_path, GT_RGB_path, num2str((frame-1), '%06d'), '.png'));
+        
+        
         
         objs = seg_image(depth, label, instance, extrinsic_params, intrinsic_params);
         objs = get_init_guess(objs);
         objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_params, 1);
         
         draw_scene(objs, 1)
+        segmentation_map = get_all_instance_label(instance, label);
     end
     % Check:
     % mean_error = check_projection(objs, extrinsic_params,
     % intrinsic_params);
+    % img = imread(strcat(base_path, GT_RGB_path, num2str((frame-1), '%06d'), '.png'));
 end
 function extrinsic_params = get_new_extrinsic_params(extrinsic_params)
     load('affine_matrix.mat');

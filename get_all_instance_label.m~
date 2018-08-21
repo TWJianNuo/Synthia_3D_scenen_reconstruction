@@ -1,0 +1,27 @@
+function segmentation_map = get_all_instance_label(instance_label, class_label)
+    % For each time, create one binary image for that catgory, then do
+    % algorithm for that binary image.
+    % If instance label already existing, then skip
+    
+    % Start on pixel with instance label
+    
+    segmentation_map = cell(15, 1);
+    for i = 1 : 15
+        segmentation_map{i}.obj
+    
+    existing_instance = unique(instance_label);
+    
+    labelled_pixel = false(size(instance_label));
+    
+    
+    
+    
+    for i = 1 : length(all_instances)
+        cur_instance = existing_instance(i);
+        [ix, iy] = find(instance_label == i);
+        linear_ind = sub2ind(size(instance_label), ix, iy);
+        labelled_pixel(linear_ind) = true;
+        
+        
+    end
+end

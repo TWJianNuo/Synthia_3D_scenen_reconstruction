@@ -69,10 +69,15 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
     image_size = size(objs{1}.depth_map);
     camera_origin = (-R' * T)';
     num1 = 10; num2 = 10;
-    gamma = 0.5;
+    gamma = 0.5; delta_threshold = 0.01;
     activation_label = [1 1 1 1 1 0];
     it_count = 0;
-    while true
+    is_terminated = false;
+    max_it_num = 300;
+    tot_dist_record = zeros(max_it_num, 1); tot_params_record = zeros(max_it_num, 6);
+    
+    tot_dist_record(1) = calculate_ave_distance(objs{index}.cur_cuboid, objs{index}.new_pts); tot_params_record(1, :) = objs{index}.guess;
+    while ~is_terminated
         it_count = it_count + 1;
         cur_activation_label = cancel_co_activation_label(activation_label);
         
@@ -94,13 +99,65 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
         draw_cuboid(cubics{index});
         hold on
         scatter3(objs{index}.new_pts(:,1), objs{index}.new_pts(:,2), objs{index}.new_pts(:,3), 3, 'g', 'fill')
-        % saveas(gcf, [path num2str(it_count) '.png'])
-        [path num2str(it_count) '.png']
         
-        delta = inv(hessian) * first_order; params_cuboid_order = update_params(objs{index}.guess, delta, gamma, cur_activation_label);
+        delta = calculate_delta(hessian, first_order); params_cuboid_order = update_params(objs{index}.guess, delta, gamma, cur_activation_label);
         objs{index}.guess(1:6) = params_cuboid_order;
         cx = params_cuboid_order(1); cy = params_cuboid_order(2); theta = params_cuboid_order(3); l = params_cuboid_order(4); w = params_cuboid_order(5); h = params_cuboid_order(6);
         objs{index}.cur_cuboid = generate_cuboid_by_center(cx, cy, theta, l, w, h);
+        ave_dist = calculate_ave_distance(objs{index}.cur_cuboid, objs{index}.new_pts); tot_dist_record(it_count + 1) = ave_dist; tot_params_record(it_count + 1, :) = objs{index}.guess;
+        
+        if max(abs(delta)) < delta_threshold | it_count >= max_it_num
+            is_terminated = true;
+        end
+    end
+    objs = find_best_fit_cubic(objs, tot_dist_record, tot_params_record, index);
+    figure(1)
+    clf
+    scatter3(visible_pt_3d(:,1), visible_pt_3d(:,2), visible_pt_3d(:,3), 3, 'r', 'fill');
+    hold on
+    draw_cuboid(cubics{index});
+    hold on
+    scatter3(objs{index}.new_pts(:,1), objs{index}.new_pts(:,2), objs{index}.new_pts(:,3), 3, 'g', 'fill')
+end
+function objs = find_best_fit_cubic(objs, tot_dist_record, tot_params_record, index)
+    selector = (tot_dist_record ~= 0); tot_dist_record = tot_dist_record(selector); tot_params_record = tot_params_record(selector, :);
+    min_index = find(tot_dist_record == min(tot_dist_record));
+    if length(min_index) > 1
+        warning('Multiple minimum values')
+        min_index = min_index(1);
+    end
+    params_cuboid_order = objs{index}.guess;
+    cx = params_cuboid_order(1); cy = params_cuboid_order(2); theta = params_cuboid_order(3); l = params_cuboid_order(4); w = params_cuboid_order(5); h = params_cuboid_order(6);
+    objs{index}.guess = tot_params_record(min_index, :);
+    objs{index}.cur_cuboid = generate_cuboid_by_center(cx, cy, theta, l, w, h);
+end
+function ave_dist = calculate_ave_distance(cuboid, pts)
+    params = zeros(5, 4);
+    for i = 1 : 5
+        params(i, :) = cuboid{i}.params;
+    end
+    dist = pts * params' ./ repmat(sum(params.^2, 2)', [size(pts, 1) 1]);
+    [val, loc] = min(dist');
+    ave_dist = sum(val) / size(pts, 1);
+    % Check:
+    %{
+    cmap = colormap;
+    rand_color_ind = [1 13 25 37 49];
+    colors = cmap(rand_color_ind, :);
+    for i = 1 : 5
+        selector = (loc == i);
+        scatter3(pts(selector,1), pts(selector,2), pts(selector,3), 3, colors(i, :))
+        hold on
+    end
+    %}
+end
+function delta = calculate_delta(hessian, first_order)
+    warning(''); % Empty existing warning
+    delta = hessian \ first_order;
+    [msgstr, msgid] = lastwarn;
+    if strcmp(msgstr,'矩阵为奇异工作精度。') & strcmp(msgid, 'MATLAB:singularMatrix')
+        delta = 0;
+        disp('Frame Discarded due to singular Matrix')
     end
 end
 function cubics = distill_all_eisting_cubic_shapes(objs)

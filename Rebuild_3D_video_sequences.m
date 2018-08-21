@@ -22,6 +22,7 @@ function env_set()
     GT_Depth_path = 'Depth/Stereo_Left/Omni_F/'; % depth file path
     GT_seg_path = 'GT/LABELS/Stereo_Left/Omni_F/'; % Segmentation mark path
     GT_RGB_path = 'RGB/Stereo_Left/Omni_F/';
+    GT_Color_Label_path = 'GT/COLOR/Stereo_Left/Omni_F/';
     cam_para_path = 'CameraParams/Stereo_Left/Omni_F/';
     
     focal = 532.7403520000000; cx = 640; cy = 380; % baseline = 0.8;
@@ -31,6 +32,8 @@ function env_set()
     
     for frame = 1 : 1
         f = num2str(frame, '%06d');
+        
+        img = imread(strcat(base_path, GT_Color_Label_path, num2str((frame-1), '%06d'), '.png'));
         
         % Get Camera parameter
         txtPath = strcat(base_path, cam_para_path, num2str((frame-1), '%06d'), '.txt');
@@ -46,18 +49,52 @@ function env_set()
         [label, instance] = getIDs(ImagePath);
         
         
-        
+        % get_all_3d_pt(depth, extrinsic_params, intrinsic_params, label);
         objs = seg_image(depth, label, instance, extrinsic_params, intrinsic_params);
+        % draw_segmented_objs(objs, img)
         objs = get_init_guess(objs);
-        objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_params, 1);
+        % objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_params, 1);
         
         draw_scene(objs, 1)
-        segmentation_map = get_all_instance_label(instance, label);
     end
     % Check:
     % mean_error = check_projection(objs, extrinsic_params,
     % intrinsic_params);
     % img = imread(strcat(base_path, GT_RGB_path, num2str((frame-1), '%06d'), '.png'));
+end
+function draw_segmented_objs(objs, rgb_seg)
+    show_img = uint8(zeros(size(rgb_seg)));
+    cmap = colormap;
+    cmap = uint8(round(cmap * 255));
+    for i = 1 : length(objs)
+        color = cmap(randi([1 64]), :);
+        if objs{i}.type == 2
+            [I,J] = ind2sub(size(objs{i}.depth_map),objs{i}.linear_ind);
+            for k = 1 : length(I)
+                show_img(I(k), J(k), :) = color;
+            end
+        end
+    end
+end
+function get_all_3d_pt(depth_map, extrinsic_params, intrinsic_params, label)
+    load('type_color_map.mat')
+    figure(1)
+    clf
+    for i = 1 : 15
+        % Exclude void(0), reserved1(13), reserved2(14), sky(1),
+        % road(3), sidewalk(4), fence(5), lanemarking(12)
+        if i == 1 || i == 0 || i == 13 || i == 14 || i == 12 || i == 3 || i == 4 || i == 5
+            continue
+        end
+        [ix, iy] = find(label == i);
+        linear_ind = sub2ind(size(depth_map), ix, iy);
+        old_pts = get_3d_pts(depth_map, extrinsic_params, intrinsic_params, linear_ind);
+        new_pts = get_pt_on_new_coordinate_system(old_pts);
+        figure(1)
+        scatter3(new_pts(:,1),new_pts(:,2),new_pts(:,3),3,type_color_map(i, :)/255,'fill')
+        hold on
+    end
+    axis equal
 end
 function extrinsic_params = get_new_extrinsic_params(extrinsic_params)
     load('affine_matrix.mat');
@@ -88,7 +125,7 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
         cur_pts = sample_cubic_by_num(objs{index}.cur_cuboid, num1, num2);
         [pts_estimated_2d, pts_estimated_vlaid, ~, depth] = projectPoints(cur_pts, intrinsic_params(1:3, 1:3), extrinsic_params, [0,0,0,0,0], [image_size(1) image_size(2)], false);
         cur_pts = cur_pts(pts_estimated_vlaid, :); pts_estimated_2d = pts_estimated_2d(pts_estimated_vlaid, :); depth = depth(pts_estimated_vlaid);
-        [visible_pt_3d, visible_pt_2d, visible_depth] = find_visible_pt_global(cubics, pts_estimated_2d, cur_pts, depth, intrinsic_params, extrinsic_params, camera_origin);
+        [visible_pt_3d, ~, ~] = find_visible_pt_global(cubics, pts_estimated_2d, cur_pts, depth, intrinsic_params, extrinsic_params, camera_origin);
         
         activated_params_num = sum(double(cur_activation_label));
         hessian = zeros(activated_params_num, activated_params_num); first_order = zeros(activated_params_num, 1);
@@ -109,7 +146,7 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
         objs{index}.cur_cuboid = generate_cuboid_by_center(cx, cy, theta, l, w, h);
         ave_dist = calculate_ave_distance(objs{index}.cur_cuboid, objs{index}.new_pts); tot_dist_record(it_count + 1) = ave_dist; tot_params_record(it_count + 1, :) = objs{index}.guess;
         
-        if max(abs(delta)) < delta_threshold | it_count >= max_it_num
+        if max(abs(delta)) < delta_threshold || it_count >= max_it_num
             is_terminated = true;
         end
     end
@@ -155,10 +192,10 @@ function ave_dist = calculate_ave_distance(cuboid, pts)
     %}
 end
 function delta = calculate_delta(hessian, first_order)
-    warning(''); % Empty existing warning
+    lastwarn(''); % Empty existing warning
     delta = hessian \ first_order;
     [msgstr, msgid] = lastwarn;
-    if strcmp(msgstr,'矩阵为奇异工作精度。') & strcmp(msgid, 'MATLAB:singularMatrix')
+    if strcmp(msgstr,'矩阵为奇异工作精度。') && strcmp(msgid, 'MATLAB:singularMatrix')
         delta = 0;
         disp('Frame Discarded due to singular Matrix')
     end
@@ -178,37 +215,86 @@ function objs = get_init_guess(objs)
 end
 function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsic_params)
     % Only for car currently;
-    [car_ix, car_iy] = find(label == 8);
-    
-    all_car_pixel = sub2ind(size(label), car_ix, car_iy);
-    to_seg = unique(instance(all_car_pixel));
-    objs = cell(length(to_seg), 1);
-    
+    tot_type_num = 15; % in total 15 labelled categories
     max_depth = max(max(depth_map));
+    min_obj_pixel_num = 100;
     
-    for i = 1 : length(to_seg)
-        objs{i} = struct;
-        objs{i}.instance = to_seg(i);
-        objs{i}.label = 8;
+    tot_obj_num = 0;
+    objs = cell(tot_obj_num);
+    
+    existing_instance = unique(instance);
+    labelled_pixel = false(size(instance));
+    
+    for i = 1 : length(existing_instance)
+        cur_instance = existing_instance(i);
+        if cur_instance == 0
+            continue;
+        end
+        [ix, iy] = find(instance == cur_instance);
+        linear_ind = sub2ind(size(instance), ix, iy);
+        labelled_pixel(linear_ind) = true;
         
-        [all_cur_instance_ix, all_cur_instance_iy] = find(instance == to_seg(i));
-        all_cur_instance_pixel = sub2ind(size(label), all_cur_instance_ix, all_cur_instance_iy);
+        type = label(linear_ind(1));
+        instance_id = instance(linear_ind(1));
+        tot_obj_num = tot_obj_num + 1;
+        objs{tot_obj_num, 1} = init_single_obj(depth_map, linear_ind, extrinsic_params, intrinsic_params, type, instance_id, max_depth);
         
-        objs{i}.instance = all_cur_instance_pixel;
-        objs{i}.depth_map = ones(size(depth_map)) * max_depth;
-        objs{i}.depth_map(objs{i}.instance) = depth_map(objs{i}.instance);
-        
-        objs{i}.old_pts = get_3d_pts(depth_map, extrinsic_params, intrinsic_params, objs{i}.instance);
-        objs{i}.new_pts = get_pt_on_new_coordinate_system(objs{i}.old_pts);
+        instance(linear_ind) = 0;
+        label(linear_ind) = 0;
     end
+    
+    % Exclude void(0), reserved1(13), reserved2(14), sky(1),
+    % road(3), sidewalk(4), fence(5), lanemarking(12)
+    for i = 1 : tot_type_num
+        % if i == 1 || i == 0 || i == 13 || i == 14 || i == 12 || i == 3 || i == 4 || i == 5
+        %     continue
+        % end
+        if i ~= -1
+            continue
+        end
+        [ix, iy] = find(label == i);
+        linear_ind = sub2ind(size(instance), ix, iy);
+        if ~isempty(linear_ind)
+            binary_map = false(size(instance));
+            binary_map(linear_ind) = true;
+            CC = bwconncomp(binary_map);
+            for j = 1 : CC.NumObjects
+                if length(CC.PixelIdxList{j}) > min_obj_pixel_num
+                    tot_obj_num = tot_obj_num + 1;
+                    objs{tot_obj_num, 1} = init_single_obj(depth_map, CC.PixelIdxList{j}, extrinsic_params, intrinsic_params, i, 0, max_depth);
+                end
+                label(CC.PixelIdxList{j}) = 0;
+                instance(CC.PixelIdxList{j}) = 0;
+            end
+        end
+    end
+    
+    if max(max(label)) ~= 0 || max(max(instance)) ~= 0
+        warning('Some objects not distilled')
+    end
+    
+end
+
+function obj = init_single_obj(depth_map, linear_ind, extrinsic_params, intrinsic_params, type, instance_id, max_depth)
+    obj = struct;
+    obj.instance = instance_id;
+    obj.type = type;
+    
+    obj.linear_ind = linear_ind;
+    obj.depth_map = ones(size(depth_map)) * max_depth;
+    obj.depth_map(obj.linear_ind) = depth_map(obj.linear_ind);
+    
+    obj.old_pts = get_3d_pts(depth_map, extrinsic_params, intrinsic_params, obj.linear_ind);
+    obj.new_pts = get_pt_on_new_coordinate_system(obj.old_pts);
 end
 
 function draw_scene(objs, index)
+    cmap = colormap;
     figure(index)
     clf
     for i = 1 : length(objs)
         pts = objs{i}.new_pts;
-        scatter3(pts(:,1), pts(:,2), pts(:,3), 3, 'r', 'fill')
+        scatter3(pts(:,1), pts(:,2), pts(:,3), 3, cmap(randi([1 64]), :), 'fill')
         hold on
         draw_cuboid(objs{i}.cur_cuboid)
     end
@@ -225,10 +311,6 @@ function reconstructed_3d = get_3d_pts(depth_map, extrinsic_params, intrinsic_pa
 end
 function show_depth_map(depth_map)
     imshow(uint16(depth_map * 1000));
-end
-function show_img_on_index(image, figure_ind)
-    figure(figure_ind)
-    imshow(image)
 end
 function params_cuboid_order = update_params(old_params, delta, gamma, activation_label)
     activation_label = (activation_label == 1);

@@ -126,3 +126,83 @@ function mean_error = check_projection(objs, extrinsic_params, intrinsic_params)
     end
     mean_error = sqrt(sum_error / tot_num);
 end
+function get_all_3d_pt(depth_map, extrinsic_params, intrinsic_params, label)
+    load('type_color_map.mat')
+    figure(1)
+    clf
+    for i = 1 : 15
+        % Exclude void(0), reserved1(13), reserved2(14), sky(1),
+        % road(3), sidewalk(4), fence(5), lanemarking(12)
+        if i == 1 || i == 0 || i == 13 || i == 14 || i == 12 || i == 3 || i == 4 || i == 5
+            continue
+        end
+        [ix, iy] = find(label == i);
+        linear_ind = sub2ind(size(depth_map), ix, iy);
+        old_pts = get_3d_pts(depth_map, extrinsic_params, intrinsic_params, linear_ind);
+        new_pts = get_pt_on_new_coordinate_system(old_pts);
+        figure(1)
+        scatter3(new_pts(:,1),new_pts(:,2),new_pts(:,3),3,type_color_map(i, :)/255,'fill')
+        hold on
+    end
+    axis equal
+end
+function draw_segmented_objs(objs, rgb_seg)
+    show_img = uint8(zeros(size(rgb_seg)));
+    cmap = colormap;
+    cmap = uint8(round(cmap * 255));
+    for i = 1 : length(objs)
+        color = cmap(randi([1 64]), :);
+        if objs{i}.type == 2
+            [I,J] = ind2sub(size(objs{i}.depth_map),objs{i}.linear_ind);
+            for k = 1 : length(I)
+                show_img(I(k), J(k), :) = color;
+            end
+        end
+    end
+end
+
+function ave_dist = calculate_ave_distance(cuboid, pts)
+    theta_ = -cuboid{1}.theta; l = cuboid{1}.length1; w = cuboid{2}.length1; h = cuboid{1}.length2; bottom_center = mean(cuboid{5}.pts);
+    
+    transition = [
+        1,  0,  0,  -bottom_center(1);
+        0,  1,  0,  -bottom_center(2);
+        0,  0,  1,  -bottom_center(3)/2;
+        0,  0,  0,  1;
+        ];
+    r_on_z = [
+        cos(theta_) -sin(theta_)    0   0;
+        sin(theta_) cos(theta_)     0   0;
+        0           0               1   0;
+        0           0               0   1;
+        ];
+    scaling = [
+        1/l,    0,      0,      0;
+        0,    1/w,      0,      0;
+        0,      0,      1/h,    0;
+        0,      0,      0,      1;
+        ];
+    affine_matrix = scaling * r_on_z * transition;
+    pts = [pts(:, 1:3) ones(size(pts,1), 1)]; pts = (affine_matrix * pts')';
+    intern_dist = abs(pts(:,1:3)) - 1; intern_dist(intern_dist < 0) = 0;
+    dist = sum(intern_dist.^2, 2); dist(dist == 0) = min(0.5 - abs(pts(dist == 0, 1 : 3)), [], 2);
+    ave_dist = sum(dist) / size(pts, 1);
+    % params = zeros(5, 4);
+    % for i = 1 : 5
+    %     params(i, :) = cuboid{i}.params;
+    % end
+    % dist = abs(pts * params') ./ repmat(sum(params.^2, 2)', [size(pts, 1) 1]);
+    % [val, ~] = min(dist');
+    % ave_dist = sum(val) / size(pts, 1);
+    % Check:
+    %{
+    cmap = colormap;
+    rand_color_ind = [1 13 25 37 49];
+    colors = cmap(rand_color_ind, :);
+    for i = 1 : 5
+        selector = (loc == i);
+        scatter3(pts(selector,1), pts(selector,2), pts(selector,3), 3, colors(i, :))
+        hold on
+    end
+    %}
+end

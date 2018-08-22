@@ -17,6 +17,12 @@ env_set()
 % Reserved		13
 % Reserved      14
 % Traffic Light	15
+
+% Do not stick with the specific details of the problem
+% Do Single scene reconstruction first
+% Do Multiple scene reconstruction later on
+% Two problem, sampling problem and a termination condition selection
+% problem
 function env_set()
     base_path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/'; % base file path
     GT_Depth_path = 'Depth/Stereo_Left/Omni_F/'; % depth file path
@@ -33,7 +39,7 @@ function env_set()
     for frame = 1 : 1
         f = num2str(frame, '%06d');
         
-        img = imread(strcat(base_path, GT_Color_Label_path, num2str((frame-1), '%06d'), '.png'));
+        color_gt = imread(strcat(base_path, GT_Color_Label_path, num2str((frame-1), '%06d'), '.png'));
         
         % Get Camera parameter
         txtPath = strcat(base_path, cam_para_path, num2str((frame-1), '%06d'), '.txt');
@@ -53,49 +59,18 @@ function env_set()
         objs = seg_image(depth, label, instance, extrinsic_params, intrinsic_params);
         % draw_segmented_objs(objs, img)
         objs = get_init_guess(objs);
-        % objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_params, 1);
+        for i = 1 : length(objs)
+            objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_params, i);
+        end
         
-        draw_scene(objs, 1)
+        draw_scene(objs, 1, color_gt)
     end
     % Check:
     % mean_error = check_projection(objs, extrinsic_params,
     % intrinsic_params);
     % img = imread(strcat(base_path, GT_RGB_path, num2str((frame-1), '%06d'), '.png'));
 end
-function draw_segmented_objs(objs, rgb_seg)
-    show_img = uint8(zeros(size(rgb_seg)));
-    cmap = colormap;
-    cmap = uint8(round(cmap * 255));
-    for i = 1 : length(objs)
-        color = cmap(randi([1 64]), :);
-        if objs{i}.type == 2
-            [I,J] = ind2sub(size(objs{i}.depth_map),objs{i}.linear_ind);
-            for k = 1 : length(I)
-                show_img(I(k), J(k), :) = color;
-            end
-        end
-    end
-end
-function get_all_3d_pt(depth_map, extrinsic_params, intrinsic_params, label)
-    load('type_color_map.mat')
-    figure(1)
-    clf
-    for i = 1 : 15
-        % Exclude void(0), reserved1(13), reserved2(14), sky(1),
-        % road(3), sidewalk(4), fence(5), lanemarking(12)
-        if i == 1 || i == 0 || i == 13 || i == 14 || i == 12 || i == 3 || i == 4 || i == 5
-            continue
-        end
-        [ix, iy] = find(label == i);
-        linear_ind = sub2ind(size(depth_map), ix, iy);
-        old_pts = get_3d_pts(depth_map, extrinsic_params, intrinsic_params, linear_ind);
-        new_pts = get_pt_on_new_coordinate_system(old_pts);
-        figure(1)
-        scatter3(new_pts(:,1),new_pts(:,2),new_pts(:,3),3,type_color_map(i, :)/255,'fill')
-        hold on
-    end
-    axis equal
-end
+
 function extrinsic_params = get_new_extrinsic_params(extrinsic_params)
     load('affine_matrix.mat');
     extrinsic_params = extrinsic_params / affine_matrx;
@@ -112,8 +87,8 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
     gamma = 0.5; delta_threshold = 0.01;
     activation_label = [1 1 1 1 1 0];
     it_count = 0;
-    is_terminated = false;
-    max_it_num = 300;
+    is_terminated = false; terminate_ratio = 0.05; distortion_terminate_ratio = 1.1;
+    max_it_num = 300; 
     tot_dist_record = zeros(max_it_num, 1); tot_params_record = zeros(max_it_num, 6);
     
     tot_dist_record(1) = calculate_ave_distance(objs{index}.cur_cuboid, objs{index}.new_pts); tot_params_record(1, :) = objs{index}.guess;
@@ -140,13 +115,13 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
         hold on
         scatter3(objs{index}.new_pts(:,1), objs{index}.new_pts(:,2), objs{index}.new_pts(:,3), 3, 'g', 'fill')
         
-        delta = calculate_delta(hessian, first_order); params_cuboid_order = update_params(objs{index}.guess, delta, gamma, cur_activation_label);
+        [delta, terminate_flag_singular] = calculate_delta(hessian, first_order); [params_cuboid_order, terminate_flag] = update_params(objs{index}.guess, delta, gamma, cur_activation_label, terminate_ratio);
         objs{index}.guess(1:6) = params_cuboid_order;
         cx = params_cuboid_order(1); cy = params_cuboid_order(2); theta = params_cuboid_order(3); l = params_cuboid_order(4); w = params_cuboid_order(5); h = params_cuboid_order(6);
         objs{index}.cur_cuboid = generate_cuboid_by_center(cx, cy, theta, l, w, h);
         ave_dist = calculate_ave_distance(objs{index}.cur_cuboid, objs{index}.new_pts); tot_dist_record(it_count + 1) = ave_dist; tot_params_record(it_count + 1, :) = objs{index}.guess;
         
-        if max(abs(delta)) < delta_threshold || it_count >= max_it_num
+        if max(abs(delta)) < delta_threshold || it_count >= max_it_num || terminate_flag || terminate_flag_singular || (tot_dist_record(it_count + 1) / min(tot_dist_record(1:(it_count + 1)))) > distortion_terminate_ratio
             is_terminated = true;
         end
     end
@@ -172,32 +147,41 @@ function objs = find_best_fit_cubic(objs, tot_dist_record, tot_params_record, in
     objs{index}.cur_cuboid = generate_cuboid_by_center(cx, cy, theta, l, w, h);
 end
 function ave_dist = calculate_ave_distance(cuboid, pts)
-    params = zeros(5, 4);
-    for i = 1 : 5
-        params(i, :) = cuboid{i}.params;
-    end
-    dist = pts * params' ./ repmat(sum(params.^2, 2)', [size(pts, 1) 1]);
-    [val, loc] = min(dist');
-    ave_dist = sum(val) / size(pts, 1);
-    % Check:
-    %{
-    cmap = colormap;
-    rand_color_ind = [1 13 25 37 49];
-    colors = cmap(rand_color_ind, :);
-    for i = 1 : 5
-        selector = (loc == i);
-        scatter3(pts(selector,1), pts(selector,2), pts(selector,3), 3, colors(i, :))
-        hold on
-    end
-    %}
+    theta_ = -cuboid{1}.theta; l = cuboid{1}.length1; w = cuboid{2}.length1; h = cuboid{1}.length2; bottom_center = mean(cuboid{5}.pts);
+    
+    transition = [
+        1,  0,  0,  -bottom_center(1);
+        0,  1,  0,  -bottom_center(2);
+        0,  0,  1,  -bottom_center(3)/2;
+        0,  0,  0,  1;
+        ];
+    r_on_z = [
+        cos(theta_) -sin(theta_)    0   0;
+        sin(theta_) cos(theta_)     0   0;
+        0           0               1   0;
+        0           0               0   1;
+        ];
+    scaling = [
+        1/l,    0,      0,      0;
+        0,    1/w,      0,      0;
+        0,      0,      1/h,    0;
+        0,      0,      0,      1;
+        ];
+    affine_matrix = scaling * r_on_z * transition;
+    pts = [pts(:, 1:3) ones(size(pts,1), 1)]; pts = (affine_matrix * pts')';
+    intern_dist = abs(pts(:,1:3)) - 0.5; intern_dist(intern_dist < 0) = 0;
+    dist = sum(intern_dist.^2, 2); dist(dist == 0) = min(0.5 - abs(pts(dist == 0, 1 : 3)), [], 2);
+    ave_dist = sum(dist) / size(pts, 1);
 end
-function delta = calculate_delta(hessian, first_order)
+function [delta, terminate_flag] = calculate_delta(hessian, first_order)
     lastwarn(''); % Empty existing warning
     delta = hessian \ first_order;
     [msgstr, msgid] = lastwarn;
+    terminate_flag = false;
     if strcmp(msgstr,'矩阵为奇异工作精度。') && strcmp(msgid, 'MATLAB:singularMatrix')
         delta = 0;
-        disp('Frame Discarded due to singular Matrix')
+        disp('Frame Discarded due to singular Matrix, terminated')
+        terminate_flag = true;
     end
 end
 function cubics = distill_all_eisting_cubic_shapes(objs)
@@ -208,16 +192,76 @@ function cubics = distill_all_eisting_cubic_shapes(objs)
 end
 function objs = get_init_guess(objs)
     for i = 1 : length(objs)
-        [params, cuboid] = estimate_rectangular(objs{i}.new_pts);
-        objs{i}.guess = params;
-        objs{i}.cur_cuboid = cuboid;
+        objs = k_mean_check(objs, i);
+        % [params, cuboid] = estimate_rectangular(objs{i}.new_pts);
+        % objs{i}.guess = params;
+        % objs{i}.cur_cuboid = cuboid;
+    end
+end
+function objs = k_mean_check(objs, index)
+    obj = objs{index};
+    is_terminated = false;
+    [next_params, ~] = estimate_rectangular(obj.new_pts);
+    idx = ones(size(obj.linear_ind)); cur_volume = next_params(4) * next_params(5) * next_params(6); cur_center_num = 1;
+    split_threshold = 3; min_split_num = 4;
+    while true
+        if is_terminated
+            break
+        end
+        center_num_old = cur_center_num; next_params_old = next_params; idx_old = idx; 
+        cur_center_num = cur_center_num + 1; next_params = zeros(cur_center_num, 6); idx = kmeans(obj.new_pts(:, 1:2),cur_center_num);
+        for i = 1 : cur_center_num
+            linear_ind = find(idx == i);
+            if length(linear_ind) >= min_split_num
+                next_params(i, :) = estimate_rectangular(obj.new_pts(linear_ind, :));
+            else
+                next_params(i, :) = [0, 0, 0, 0, 0, 0];
+            end
+        end
+        
+        if cur_volume / calculate_sum_volume(next_params) < split_threshold
+            is_terminated = true;
+        end
+        cur_volume = calculate_sum_volume(next_params);
+    end
+    objs = split_cells(objs, index, center_num_old, next_params_old, idx_old, min_split_num);
+end
+function objs = split_cells(objs, index, center_num_old, next_params_old, idx_old, min_split_num)
+    old_obj = objs{index};
+    is_first = false;
+    for i = 1 : center_num_old
+        if length(idx_old == i) > min_split_num
+            if ~is_first
+                objs{index} = give_value_to_splitted_obj(old_obj, next_params_old, idx_old, i);
+                is_first = true;
+            else
+                objs{end + 1} = give_value_to_splitted_obj(old_obj, next_params_old, idx_old, i);
+            end
+        end
+    end
+end
+function splitted_obj = give_value_to_splitted_obj(old_obj, next_params_old, idx_old, ind)
+    splitted_obj = old_obj;
+    guess = next_params_old(ind, :);
+    splitted_obj.guess = guess;
+    splitted_obj.cur_cuboid = generate_cuboid_by_center(guess(1),guess(2),guess(3),guess(4),guess(5),guess(6));
+    splitted_obj.linear_ind = old_obj.linear_ind(idx_old == ind);
+    splitted_obj.old_pts = old_obj.old_pts(idx_old == ind, :);
+    splitted_obj.new_pts = old_obj.new_pts(idx_old == ind, :);
+    splitted_obj.depth_map = zeros(size(old_obj.depth_map));
+    splitted_obj.depth_map(splitted_obj.linear_ind) = old_obj.depth_map(splitted_obj.linear_ind);
+end
+function volume = calculate_sum_volume(params)
+    volume = 0;
+    for i = 1 : size(params, 1)
+        volume = volume + params(i, 4) * params(i, 5) * params(i, 6);
     end
 end
 function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsic_params)
     % Only for car currently;
     tot_type_num = 15; % in total 15 labelled categories
     max_depth = max(max(depth_map));
-    min_obj_pixel_num = 100;
+    min_obj_pixel_num = [inf, 800, inf, inf, inf, inf, 10, 10, inf, 10, 10, inf, inf, inf, inf];
     
     tot_obj_num = 0;
     objs = cell(tot_obj_num);
@@ -243,13 +287,10 @@ function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsi
         label(linear_ind) = 0;
     end
     
-    % Exclude void(0), reserved1(13), reserved2(14), sky(1),
+    % Exclude void(0), reserved1(13), reserved2(14), sky(1), tree(6)
     % road(3), sidewalk(4), fence(5), lanemarking(12)
     for i = 1 : tot_type_num
-        % if i == 1 || i == 0 || i == 13 || i == 14 || i == 12 || i == 3 || i == 4 || i == 5
-        %     continue
-        % end
-        if i ~= -1
+        if i ~= 2 && i ~= 7 && i ~= 8 && i ~= 10 && i ~= 11 && i ~= 6
             continue
         end
         [ix, iy] = find(label == i);
@@ -259,7 +300,7 @@ function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsi
             binary_map(linear_ind) = true;
             CC = bwconncomp(binary_map);
             for j = 1 : CC.NumObjects
-                if length(CC.PixelIdxList{j}) > min_obj_pixel_num
+                if length(CC.PixelIdxList{j}) > min_obj_pixel_num(i)
                     tot_obj_num = tot_obj_num + 1;
                     objs{tot_obj_num, 1} = init_single_obj(depth_map, CC.PixelIdxList{j}, extrinsic_params, intrinsic_params, i, 0, max_depth);
                 end
@@ -288,17 +329,31 @@ function obj = init_single_obj(depth_map, linear_ind, extrinsic_params, intrinsi
     obj.new_pts = get_pt_on_new_coordinate_system(obj.old_pts);
 end
 
-function draw_scene(objs, index)
+function draw_scene(objs, index, color_gt)
     cmap = colormap;
+    new_color_gt = uint8(zeros(size(color_gt)));
     figure(index)
     clf
     for i = 1 : length(objs)
+        % if objs{i}.type ~= 7
+        %     continue
+        % end
+        color = cmap(randi([1 64]), :);
         pts = objs{i}.new_pts;
-        scatter3(pts(:,1), pts(:,2), pts(:,3), 3, cmap(randi([1 64]), :), 'fill')
+        [I,J] = ind2sub(size(objs{i}.depth_map),objs{i}.linear_ind);
+        for k = 1 : length(objs{i}.linear_ind)
+            color_gt(I(k), J(k), :) = uint8([256 256 256]);
+            new_color_gt(I(k), J(k), :) = uint8(round(color * 255));
+        end
+        scatter3(pts(:,1), pts(:,2), pts(:,3), 3, color, 'fill')
         hold on
         draw_cuboid(objs{i}.cur_cuboid)
     end
     axis equal
+    figure(2)
+    imshow(color_gt)
+    figure(3)
+    imshow(new_color_gt)
 end
 function reconstructed_3d = get_3d_pts(depth_map, extrinsic_params, intrinsic_params, valuable_ind)
     height = size(depth_map, 1);
@@ -312,25 +367,29 @@ end
 function show_depth_map(depth_map)
     imshow(uint16(depth_map * 1000));
 end
-function params_cuboid_order = update_params(old_params, delta, gamma, activation_label)
+function [params_cuboid_order, terminate_flag] = update_params(old_params, delta, gamma, activation_label, termination_ratio)
+    terminate_flag = false;
     activation_label = (activation_label == 1);
     new_params = old_params;
     params_derivation_order = [new_params(3), new_params(1), new_params(2), new_params(4), new_params(5), new_params(6)];
+    if max(abs(delta ./ params_derivation_order(activation_label))) < termination_ratio
+        terminate_flag = true;
+    end
     params_derivation_order(activation_label) = params_derivation_order(activation_label) + gamma * delta';
     params_cuboid_order = [params_derivation_order(2), params_derivation_order(3), params_derivation_order(1), params_derivation_order(4), params_derivation_order(5), params_derivation_order(6)];
-    if params_cuboid_order(4) < 0 | params_cuboid_order(5) < 0 | params_cuboid_order(6) < 0
+    if params_cuboid_order(4) < 0 || params_cuboid_order(5) < 0 || params_cuboid_order(6) < 0
         params_cuboid_order = old_params;
-        disp('Unstable')
+        terminate_flag = true;
+        disp('Impossible cubic shape, terminated')
     end
 end
 function activation_label = cancel_co_activation_label(activation_label)
     activation_label = (activation_label == 1);
-    if (activation_label(2) | activation_label(3)) & (activation_label(5) | activation_label(4))
+    if (activation_label(2) || activation_label(3)) && (activation_label(5) || activation_label(4))
         if(randi([1 2], 1) == 1)
             activation_label(2) = 0; activation_label(3) = 0;
         else
             activation_label(5) = 0; activation_label(4) = 0;
         end
     end
-
 end

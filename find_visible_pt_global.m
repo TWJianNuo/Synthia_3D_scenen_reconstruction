@@ -1,7 +1,7 @@
 function [visible_pt_3d, visible_pt_2d, visible_depth] = find_visible_pt_global(objects, pts_2d, pts_3d, depth, cam_m, transition_m, cam_origin)
     M = inv(cam_m * transition_m);
     visible_pt = zeros(size(pts_2d, 1), 7);
-    deviation_threshhold = 0.01;
+    deviation_threshhold = 0.00001;
     valid_plane_num = 4;
     num_obj = size(objects, 1);
     for ii = 1 : size(pts_2d, 1)
@@ -15,11 +15,13 @@ function [visible_pt_3d, visible_pt_2d, visible_depth] = find_visible_pt_global(
                 single_pt_all_possible_pos((k - 1) * valid_plane_num + i, :) = (M * [pts_2d(ii, 1) * z pts_2d(ii, 2) * z z 1]')';
             end
             [valid_label((k-1) * valid_plane_num + 1 : k * valid_plane_num, :), ~] = judge_on_cuboid(cuboid, single_pt_all_possible_pos((k - 1) * valid_plane_num + 1 : k * valid_plane_num, :));
+            
         end
         
         if length(single_pt_all_possible_pos(valid_label)) > 0
             vale_pts = single_pt_all_possible_pos(valid_label, :);
             dist_to_origin = sum((vale_pts(:, 1:3) - cam_origin).^2, 2);
+            % dist_to_origin = (transition_m * [vale_pts(:, 1:3) ones(size(vale_pts, 1), 1)]')'; dist_to_origin = sum(dist_to_origin(:,1:3).^2, 2);
             shortest_ind = find(dist_to_origin == min(dist_to_origin));
             shortest_ind = shortest_ind(1);
             if(sum((vale_pts(shortest_ind, 1:3) - pts_3d(ii, 1:3)).^2) < deviation_threshhold)
@@ -40,7 +42,7 @@ end
 function [valid_label, type] = judge_on_cuboid(cuboid, pts)
     valid_label = false([length(pts) 1]);
     type = ones([length(pts) 1]) * (-1);
-    th = 0.01;
+    th = 0.00001;
     if size(pts, 2) == 3
         pts = [pts ones(length(pts), 1)];
     end

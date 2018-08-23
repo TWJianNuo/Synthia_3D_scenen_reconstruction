@@ -97,6 +97,7 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
         cur_activation_label = cancel_co_activation_label(activation_label);
         
         cubics = distill_all_eisting_cubic_shapes(objs);
+        % cubics = {objs{index}.cur_cuboid};
         cur_pts = sample_cubic_by_num(objs{index}.cur_cuboid, num1, num2);
         [pts_estimated_2d, pts_estimated_vlaid, ~, depth] = projectPoints(cur_pts, intrinsic_params(1:3, 1:3), extrinsic_params, [0,0,0,0,0], [image_size(1) image_size(2)], false);
         cur_pts = cur_pts(pts_estimated_vlaid, :); pts_estimated_2d = pts_estimated_2d(pts_estimated_vlaid, :); depth = depth(pts_estimated_vlaid);
@@ -133,6 +134,7 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
     draw_cuboid(cubics{index});
     hold on
     scatter3(objs{index}.new_pts(:,1), objs{index}.new_pts(:,2), objs{index}.new_pts(:,3), 3, 'g', 'fill')
+    saveas(gcf, [path '1.png']);
 end
 function objs = find_best_fit_cubic(objs, tot_dist_record, tot_params_record, index)
     selector = (tot_dist_record ~= 0); tot_dist_record = tot_dist_record(selector); tot_params_record = tot_params_record(selector, :);
@@ -141,10 +143,14 @@ function objs = find_best_fit_cubic(objs, tot_dist_record, tot_params_record, in
         warning('Multiple minimum values')
         min_index = min_index(1);
     end
-    params_cuboid_order = objs{index}.guess;
-    cx = params_cuboid_order(1); cy = params_cuboid_order(2); theta = params_cuboid_order(3); l = params_cuboid_order(4); w = params_cuboid_order(5); h = params_cuboid_order(6);
-    objs{index}.guess = tot_params_record(min_index, :);
-    objs{index}.cur_cuboid = generate_cuboid_by_center(cx, cy, theta, l, w, h);
+    params_cuboid_order = tot_params_record(min_index, :);
+    try
+        cx = params_cuboid_order(1); cy = params_cuboid_order(2); theta = params_cuboid_order(3); l = params_cuboid_order(4); w = params_cuboid_order(5); h = params_cuboid_order(6);
+        objs{index}.guess = tot_params_record(min_index, :);
+        objs{index}.cur_cuboid = generate_cuboid_by_center(cx, cy, theta, l, w, h);
+    catch
+        Disp('Error occurred')
+    end
 end
 function ave_dist = calculate_ave_distance(cuboid, pts)
     theta_ = -cuboid{1}.theta; l = cuboid{1}.length1; w = cuboid{2}.length1; h = cuboid{1}.length2; bottom_center = mean(cuboid{5}.pts);
@@ -170,7 +176,7 @@ function ave_dist = calculate_ave_distance(cuboid, pts)
     affine_matrix = scaling * r_on_z * transition;
     pts = [pts(:, 1:3) ones(size(pts,1), 1)]; pts = (affine_matrix * pts')';
     intern_dist = abs(pts(:,1:3)) - 0.5; intern_dist(intern_dist < 0) = 0;
-    dist = sum(intern_dist.^2, 2); dist(dist == 0) = min(0.5 - abs(pts(dist == 0, 1 : 3)), [], 2);
+    dist = sum(intern_dist.^2, 2); dist = dist.^0.5; dist(dist == 0) = min(0.5 - abs(pts(dist == 0, 1 : 3)), [], 2);
     ave_dist = sum(dist) / size(pts, 1);
 end
 function [delta, terminate_flag] = calculate_delta(hessian, first_order)
@@ -230,7 +236,7 @@ function objs = split_cells(objs, index, center_num_old, next_params_old, idx_ol
     old_obj = objs{index};
     is_first = false;
     for i = 1 : center_num_old
-        if length(idx_old == i) > min_split_num
+        if sum(double(idx_old == i)) > min_split_num
             if ~is_first
                 objs{index} = give_value_to_splitted_obj(old_obj, next_params_old, idx_old, i);
                 is_first = true;
@@ -268,7 +274,7 @@ function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsi
     
     existing_instance = unique(instance);
     labelled_pixel = false(size(instance));
-    
+
     for i = 1 : length(existing_instance)
         cur_instance = existing_instance(i);
         if cur_instance == 0
@@ -286,6 +292,7 @@ function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsi
         instance(linear_ind) = 0;
         label(linear_ind) = 0;
     end
+
     
     % Exclude void(0), reserved1(13), reserved2(14), sky(1), tree(6)
     % road(3), sidewalk(4), fence(5), lanemarking(12)
@@ -293,6 +300,9 @@ function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsi
         if i ~= 2 && i ~= 7 && i ~= 8 && i ~= 10 && i ~= 11 && i ~= 6
             continue
         end
+        % if i ~= 2
+        %     continue;
+        % end
         [ix, iy] = find(label == i);
         linear_ind = sub2ind(size(instance), ix, iy);
         if ~isempty(linear_ind)

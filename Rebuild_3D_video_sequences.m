@@ -134,7 +134,6 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
     draw_cuboid(cubics{index});
     hold on
     scatter3(objs{index}.new_pts(:,1), objs{index}.new_pts(:,2), objs{index}.new_pts(:,3), 3, 'g', 'fill')
-    saveas(gcf, [path '1.png']);
 end
 function objs = find_best_fit_cubic(objs, tot_dist_record, tot_params_record, index)
     selector = (tot_dist_record ~= 0); tot_dist_record = tot_dist_record(selector); tot_params_record = tot_params_record(selector, :);

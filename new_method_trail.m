@@ -9,7 +9,7 @@ sampled_pts = sampled_pts(pts_estimated_vlaid, :); pts_estimated_2d = pts_estima
 camera_origin = (-extrinsic_params(1:3, 1:3)' * extrinsic_params(1:3, 4))';
 cubics = {cuboid}; [visible_pt_3d, ~, ~] = find_visible_pt_global(cubics, pts_estimated_2d, sampled_pts, depth, intrinsic_params, extrinsic_params, camera_origin);
 
-params = find_local_optimal_on_fixed_points(cuboid, intrinsic_params, extrinsic_params, visible_pt_3d, obj.depth_map);
+params = find_local_optimal_on_fixed_points(obj, intrinsic_params, extrinsic_params, visible_pt_3d);
 
 figure(1)
 clf
@@ -21,22 +21,26 @@ clf
 draw_cuboid(objs{1}.cur_cuboid)
 hold on
 scatter3(sampled_pts(:,1),sampled_pts(:,2),sampled_pts(:,3),3,'r','fill')
-function find_local_optimal_on_fixed_points(obj, intrinsic_params, extrinsic_params, visible_pt_3d)
+
+function params = find_local_optimal_on_fixed_points(obj, intrinsic_params, extrinsic_params, visible_pt_3d)
     activation_label = [1 1 1 1 1 0];
-    gamma = 0.5; terminate_ratio = 0.05; delta_threshold = 0.01;
-    while true
-        cur_activation_label = cancel_co_activation_label(activation_label);
+    gamma = 0.5; terminate_ratio = 0.05; delta_threshold = 0.001; max_it = 100; diff_record = zeros(max_it, 1); it_count = 0;
+    while it_count < max_it
+        it_count = it_count + 1;
+        cur_activation_label = cancel_co_activation_label(activation_label); activated_params_num = sum(double(cur_activation_label));
         hessian = zeros(activated_params_num, activated_params_num); first_order = zeros(activated_params_num, 1);
-        [hessian, first_order] = analytical_gradient(obj.cur_cuboid, intrinsic_params, extrinsic_params, visible_pt_3d, obj.depth_map, hessian, first_order, cur_activation_label);
+        [hessian, first_order, cur_tot_diff_record] = analytical_gradient(obj.cur_cuboid, intrinsic_params, extrinsic_params, visible_pt_3d, obj.depth_map, hessian, first_order, cur_activation_label);
         [delta, ~] = calculate_delta(hessian, first_order);
         [params_cuboid_order, ~] = update_params(obj.guess, delta, gamma, cur_activation_label, terminate_ratio);
         obj.guess(1:6) = params_cuboid_order;
         cx = params_cuboid_order(1); cy = params_cuboid_order(2); theta = params_cuboid_order(3); l = params_cuboid_order(4); w = params_cuboid_order(5); h = params_cuboid_order(6);
         obj.cur_cuboid = generate_cuboid_by_center(cx, cy, theta, l, w, h);
+        diff_record(it_count) = cur_tot_diff_record;
         if max(abs(delta)) < delta_threshold
             break;
         end
     end
+    params = obj.guess;
 end
 function extrinsic_params = get_new_extrinsic_params(extrinsic_params)
     load('affine_matrix.mat');

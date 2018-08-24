@@ -266,7 +266,9 @@ function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsi
     % Only for car currently;
     tot_type_num = 15; % in total 15 labelled categories
     max_depth = max(max(depth_map));
-    min_obj_pixel_num = [inf, 800, inf, inf, inf, inf, 10, 10, inf, 10, 10, inf, inf, inf, inf];
+    min_obj_pixel_num = [inf, 800, inf, inf, inf, 70, 10, 10, inf, 10, 10, inf, inf, inf, inf];
+    min_obj_height = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    max_obj_height = [inf, inf, inf, inf, inf, 0.08, 0.42, inf, inf, inf, inf, inf, inf, inf, inf];
     
     tot_obj_num = 0;
     objs = cell(tot_obj_num);
@@ -295,6 +297,12 @@ function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsi
     
     % Exclude void(0), reserved1(13), reserved2(14), sky(1), tree(6)
     % road(3), sidewalk(4), fence(5), lanemarking(12)
+    
+    
+    % Eliminate leaf part of trees
+    tee_type = 6; 
+    label = eliminate_type_pixel(label, min_obj_height, max_obj_height, extrinsic_params, intrinsic_params, depth_map, tee_type);
+    
     for i = 1 : tot_type_num
         if i ~= 2 && i ~= 7 && i ~= 8 && i ~= 10 && i ~= 11 && i ~= 6
             continue
@@ -323,6 +331,43 @@ function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsi
         warning('Some objects not distilled')
     end
     
+    % Eliminate objects pixel with height too high or too low
+    i = 1;
+    while true
+        if i > length(objs)
+            break;
+        end
+        cur_height = objs{i}.new_pts(:,3);
+        selector = cur_height > min_obj_height(objs{i}.type) & cur_height < max_obj_height(objs{i}.type);
+        if sum(double(selector)) < min_obj_pixel_num(objs{i}.type)
+            objs(i) = [];
+            i = i -1;
+        else
+            objs{i}.depth_map(objs{i}.linear_ind(~selector)) = 0;
+            objs{i}.linear_ind = objs{i}.linear_ind(selector);
+            objs{i}.new_pts = objs{i}.new_pts(selector, :);
+            objs{i}.old_pts = objs{i}.old_pts(selector, :);
+        end
+        i = i + 1;
+    end
+    for i = 1 : length(objs)
+        if objs{i}.type == 6
+            figure(1)
+            clf
+            scatter3(objs{i}.new_pts(:,1),objs{i}.new_pts(:,2),objs{i}.new_pts(:,3),3,'r','fill')
+            axis equal
+            pause(1)
+        end
+    end
+end
+function label = eliminate_type_pixel(label, min_obj_height, max_obj_height, extrinsic_params, intrinsic_params, depth_map, type)
+    min_height = min_obj_height(type); max_height = max_obj_height(type);
+    [ix, iy] = find(label == type);
+    linear_ind = sub2ind(size(label), ix, iy);
+    old_pts = get_3d_pts(depth_map, extrinsic_params, intrinsic_params, linear_ind);
+    new_pts = get_pt_on_new_coordinate_system(old_pts);
+    selector = (new_pts(:, 3) < min_height) | (new_pts(:, 3) > max_height);
+    label(selector) = 0;
 end
 
 function obj = init_single_obj(depth_map, linear_ind, extrinsic_params, intrinsic_params, type, instance_id, max_depth)
@@ -344,9 +389,6 @@ function draw_scene(objs, index, color_gt)
     figure(index)
     clf
     for i = 1 : length(objs)
-        % if objs{i}.type ~= 7
-        %     continue
-        % end
         color = cmap(randi([1 64]), :);
         pts = objs{i}.new_pts;
         [I,J] = ind2sub(size(objs{i}.depth_map),objs{i}.linear_ind);

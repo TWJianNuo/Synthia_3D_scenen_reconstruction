@@ -1,4 +1,4 @@
-% Get initial guess and point froma car
+    % Get initial guess and point froma car
 load('exp_re/fixed_plane_estimation.mat');
 
 obj = objs{1}; extrinsic_params = get_new_extrinsic_params(extrinsic_params); depth_map = obj.depth_map;

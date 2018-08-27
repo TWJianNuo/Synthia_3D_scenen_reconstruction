@@ -365,7 +365,7 @@ function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsi
     count = 0; visiting_ind = 1; it_length = length(objs);
     while count < it_length
         count = count + 1;
-        if objs{visiting_ind}.type == 6 || objs{visiting_ind}.type == 2
+        if objs{visiting_ind}.type == 6 || objs{visiting_ind}.type == 6
             SE = strel('square',2);
             objs = further_seg(extrinsic_params, intrinsic_params, [300 300], objs, visiting_ind, SE, min_obj_pixel_num(objs{visiting_ind}.type));
             visiting_ind = visiting_ind - 1;
@@ -462,9 +462,9 @@ function draw_scene(objs, index, color_gt)
     figure(index)
     clf
     for i = 1 : length(objs)
-        % if objs{i}.type ~= 6
-            % continue;
-        % end
+        if objs{i}.type ~= 6
+            continue;
+        end
         color = cmap(randi([1 64]), :);
         pts = objs{i}.new_pts;
         [I,J] = ind2sub(size(objs{i}.depth_map),objs{i}.linear_ind);

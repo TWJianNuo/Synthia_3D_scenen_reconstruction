@@ -7,7 +7,7 @@ function reconstructed_3d = get_3d_pts(depth_map, extrinsic_params, intrinsic_pa
     pts = [Y(:) X(:)];
     
     projects_pts = [pts(valuable_ind,2) .* depth_map(valuable_ind), pts(valuable_ind,1) .* depth_map(valuable_ind), depth_map(valuable_ind), ones(length(valuable_ind), 1)];
-
+    
     reconstructed_3d = (inv(intrinsic_params * extrinsic_params) * projects_pts')';
     % projects_pts = [pts(:,2) .* linear_depth_map(:), pts(:,1) .* linear_depth_map(:), linear_depth_map(:), ones(length(pts(:,1)), 1)];
     % projected_pts_2 = zeros(size(projects_pts));
@@ -88,7 +88,7 @@ function affine_transformation = get_affine_transformation(origin, new_basis, pa
     transition_matrix(2, 4) = -pt_camera_origin_3d * y_dir';
     transition_matrix(3, 4) = -pt_camera_origin_3d * z_dir';
     affine_transformation = transition_matrix;
-    % Check: 
+    % Check:
     % (affine_transformation * [old_pts ones(3,1)]')'
 end
 %}
@@ -392,12 +392,12 @@ function [hessian, first_order, tot_diff_record] = analytical_gradient(cuboid, P
     gra_pts_3d_ys{2} = @(theta, xc, yc, l, w, h, k1, k2)[
         0;
         1;
-        0 
+        0
         ];
     gra_pts_3d_ys{3} = @(theta, xc, yc, l, w, h, k1, k2)[
         0;
         1;
-        0 
+        0
         ];
     gra_pts_3d_ys{4} = @(theta, xc, yc, l, w, h, k1, k2)[
         0;
@@ -476,7 +476,7 @@ function [hessian, first_order, tot_diff_record] = analytical_gradient(cuboid, P
     gradient_set{4} = gra_pts_3d_l;
     gradient_set{5} = gra_pts_3d_w;
     gradient_set{6} = gra_pts_3d_h;
-       
+    
     activation_label = (activation_label == 1);
     
     k1 = visible_pt_3d(:, 4); k2 = visible_pt_3d(:, 5);
@@ -508,7 +508,7 @@ function [hessian, first_order, tot_diff_record] = analytical_gradient(cuboid, P
         % Calculate J3
         J_x = zeros(6, 4);
         for j = 1 : 6
-           J_x(j, :) = ([gradient_set{j}{plane_ind}(theta, xc, yc, l, w, h, k1(i), k2(i)); 0])';
+            J_x(j, :) = ([gradient_set{j}{plane_ind}(theta, xc, yc, l, w, h, k1(i), k2(i)); 0])';
         end
         J_x = J_x(activation_label, :);
         J_3 = M(3, :) * J_x';
@@ -720,7 +720,7 @@ end
 %}
 
 % Edited on 08/25/2018
-function [hessian, first_order, tot_diff_record] = analytical_gradient(cuboid, P, T, visible_pt_3d, depth_map, hessian, first_order, activation_label)    
+function [hessian, first_order, tot_diff_record] = analytical_gradient(cuboid, P, T, visible_pt_3d, depth_map, hessian, first_order, activation_label)
     activation_label = [1 0 0 0 0 0];
     theta = cuboid{1}.theta + 1;
     l = cuboid{1}.length1; w = cuboid{2}.length1; h = cuboid{1}.length2;
@@ -1376,5 +1376,283 @@ function [hessian, first_order, tot_diff_record] = analytical_gradient(cuboid, P
         %}
     end
 end
-
+function [hessian, first_order, tot_diff_record] = analytical_gradient(cuboid, P, T, visible_pt_3d, depth_map, hessian, first_order, activation_label)
+    theta = cuboid{1}.theta;
+    l = cuboid{1}.length1 + 1; w = cuboid{2}.length1; h = cuboid{1}.length2;
+    center = mean(cuboid{5}.pts); xc = center(1); yc = center(2);
+    M = P * T;
+    % 3D points
+    depth_map = [depth_map depth_map(:, end)];
+    depth_map = [depth_map; depth_map(end, :)];
+    
+    activation_label = [0 0 0 1 0 0]; activation_label = (activation_label == 1); activated_params_num = 1;
+    hessian = zeros(activated_params_num, activated_params_num); first_order = zeros(activated_params_num, 1);
+    
+    pts_3d = cell(1, 4);
+    pts_3d{1} = @(theta, xc, yc, l, w, h, k1, k2)[
+        xc - 1 / 2 * l * cos(theta) + 1 / 2 * w * sin(theta) + k1 * cos(theta) * l;
+        yc - 1 / 2 * l * sin(theta) - 1 / 2 * w * cos(theta) + k1 * sin(theta) * l;
+        k2 * h
+        ];
+    pts_3d{2} = @(theta, xc, yc, l, w, h, k1, k2)[
+        xc + 1 / 2 * l * cos(theta) + 1 / 2 * w * sin(theta) - w * k1 * sin(theta);
+        yc + 1 / 2 * l * sin(theta) - 1 / 2 * w * cos(theta) + w * k1 * cos(theta);
+        k2 * h
+        ];
+    pts_3d{3} = @(theta, xc, yc, l, w, h, k1, k2)[
+        xc + 1 / 2 * l * cos(theta) - 1 / 2 * w * sin(theta) - k1 * l * cos(theta);
+        yc + 1 / 2 * l * sin(theta) + 1 / 2 * w * cos(theta) - k1 * l * sin(theta);
+        k2 * h
+        ];
+    pts_3d{4} = @(theta, xc, yc, l, w, h, k1, k2)[
+        xc - 1 / 2 * l * cos(theta) - 1 / 2 * w * sin(theta) + w * k1 * sin(theta);
+        yc - 1 / 2 * l * sin(theta) + 1 / 2 * w * cos(theta) - w * k1 * cos(theta);
+        k2 * h
+        ];
+    % 3D points' gradient on theta
+    gra_pts_3d_theta = cell(1, 4);
+    gra_pts_3d_theta{1} = @(theta, xc, yc, l, w, h, k1, k2)[
+        1 / 2 * l * sin(theta) + 1 / 2 * w * cos(theta) - k1 * l * sin(theta);
+        -1 / 2 * l * cos(theta) + 1 / 2 * w * sin(theta) + k1 * l * cos(theta);
+        0
+        ];
+    gra_pts_3d_theta{2} = @(theta, xc, yc, l, w, h, k1, k2)[
+        -1 / 2 * l * sin(theta) + 1 / 2 * w * cos(theta) - w * k1 * cos(theta);
+        1 / 2 * l * cos(theta) + 1 / 2 * w * sin(theta) - w * k1 * sin(theta);
+        0
+        ];
+    gra_pts_3d_theta{3} = @(theta, xc, yc, l, w, h, k1, k2)[
+        -1 / 2 * l * sin(theta) - 1 / 2 * w * cos(theta) + k1 * l * sin(theta);
+        1 / 2 * l * cos(theta) - 1 / 2 * w * sin(theta) - k1 * l * cos(theta);
+        0
+        ];
+    gra_pts_3d_theta{4} = @(theta, xc, yc, l, w, h, k1, k2)[
+        1 / 2 * l * sin(theta) - 1 / 2 * w * cos(theta) + w * k1 * cos(theta);
+        - 1 / 2 * l * cos(theta) - 1 / 2 * w * sin(theta) + w * k1 * sin(theta);
+        0
+        ];
+    % 3D points' gradient on xc
+    gra_pts_3d_xs = cell(1, 4);
+    gra_pts_3d_xs{1} = @(theta, xc, yc, l, w, h, k1, k2)[
+        1;
+        0;
+        0
+        ];
+    gra_pts_3d_xs{2} = @(theta, xc, yc, l, w, h, k1, k2)[
+        1;
+        0;
+        0
+        ];
+    gra_pts_3d_xs{3} = @(theta, xc, yc, l, w, h, k1, k2)[
+        1;
+        0;
+        0
+        ];
+    gra_pts_3d_xs{4} = @(theta, xc, yc, l, w, h, k1, k2)[
+        1;
+        0;
+        0
+        ];
+    % 3D points' gradient on yc
+    gra_pts_3d_ys = cell(1, 4);
+    gra_pts_3d_ys{1} = @(theta, xc, yc, l, w, h, k1, k2)[
+        0;
+        1;
+        0
+        ];
+    gra_pts_3d_ys{2} = @(theta, xc, yc, l, w, h, k1, k2)[
+        0;
+        1;
+        0 
+        ];
+    gra_pts_3d_ys{3} = @(theta, xc, yc, l, w, h, k1, k2)[
+        0;
+        1;
+        0 
+        ];
+    gra_pts_3d_ys{4} = @(theta, xc, yc, l, w, h, k1, k2)[
+        0;
+        1;
+        0
+        ];
+    % 3D points' gradient on l
+    gra_pts_3d_l = cell(1, 4);
+    gra_pts_3d_l{1} = @(theta, xc, yc, l, w, h, k1, k2)[
+        -1 / 2 * cos(theta) + k1 * cos(theta);
+        -1 / 2 * sin(theta) + k1 * sin(theta);
+        0
+        ];
+    gra_pts_3d_l{2} = @(theta, xc, yc, l, w, h, k1, k2)[
+        1 / 2 * cos(theta);
+        1 / 2 * sin(theta);
+        0
+        ];
+    gra_pts_3d_l{3} = @(theta, xc, yc, l, w, h, k1, k2)[
+        1 / 2 * cos(theta) - k1 * cos(theta);
+        1 / 2 * sin(theta) - k1 * sin(theta);
+        0
+        ];
+    gra_pts_3d_l{4} = @(theta, xc, yc, l, w, h, k1, k2)[
+        - 1 / 2 * cos(theta);
+        - 1 / 2 * sin(theta);
+        0
+        ];
+    % 3D points' gradient on w
+    gra_pts_3d_w = cell(1, 4);
+    gra_pts_3d_w{1} = @(theta, xc, yc, l, w, h, k1, k2)[
+        1 / 2 * sin(theta);
+        - 1 / 2 * cos(theta);
+        0
+        ];
+    gra_pts_3d_w{2} = @(theta, xc, yc, l, w, h, k1, k2)[
+        1 / 2 * sin(theta) - k1 * sin(theta);
+        -1 / 2 * cos(theta) + k1 * cos(theta);
+        0
+        ];
+    gra_pts_3d_w{3} = @(theta, xc, yc, l, w, h, k1, k2)[
+        -1 / 2 * sin(theta);
+        1 / 2 * cos(theta);
+        0
+        ];
+    gra_pts_3d_w{4} = @(theta, xc, yc, l, w, h, k1, k2)[
+        -1 / 2 * sin(theta) + k1 * sin(theta);
+        1 / 2 * cos(theta) - k1 * cos(theta);
+        0;
+        ];
+    gra_pts_3d_h = cell(1, 4);
+    gra_pts_3d_h{1} = @(theta, xc, yc, l, w, h, k1, k2)[
+        0;
+        0;
+        k2
+        ];
+    gra_pts_3d_h{2} = @(theta, xc, yc, l, w, h, k1, k2)[
+        0;
+        0;
+        k2
+        ];
+    gra_pts_3d_h{3} = @(theta, xc, yc, l, w, h, k1, k2)[
+        0;
+        0;
+        k2
+        ];
+    gra_pts_3d_h{4} = @(theta, xc, yc, l, w, h, k1, k2)[
+        0;
+        0;
+        k2
+        ];
+    gradient_set = cell(1, 6);
+    gradient_set{1} = gra_pts_3d_theta;
+    gradient_set{2} = gra_pts_3d_xs;
+    gradient_set{3} = gra_pts_3d_ys;
+    gradient_set{4} = gra_pts_3d_l;
+    gradient_set{5} = gra_pts_3d_w;
+    gradient_set{6} = gra_pts_3d_h;
+       
+    activation_label = (activation_label == 1);
+    
+    k1 = visible_pt_3d(:, 4); k2 = visible_pt_3d(:, 5);
+    
+    px_ = @(pt_affine_3d)round((M(1, :) *  pt_affine_3d') / (M(3, :) * pt_affine_3d'));
+    py_ = @(pt_affine_3d)round((M(2, :) *  pt_affine_3d') / (M(3, :) * pt_affine_3d'));
+    ground_truth_depth_ = @(px, py) depth_map(px, py);
+    estimated_depth_ = @(pt_affine_3d) M(3, :) * pt_affine_3d';
+    % diff_ = @(pt_affine_3d) ground_truth_depth_(py_(pt_affine_3d), px_(pt_affine_3d)) - estimated_depth_(pt_affine_3d);
+    diff_ = @(pt_affine_3d) 3 - estimated_depth_(pt_affine_3d);
+    Ix_ = @(px, py)depth_map(py, px + 1) - depth_map(py, px);
+    Iy_ = @(px, py)depth_map(py + 1, px) - depth_map(py, px);
+    gpx_ = @(pt_affine_3d) (M(1, :) * (M(3, :) * pt_affine_3d') - M(3, :) * (M(1, :) * pt_affine_3d')) / (M(3, :) * pt_affine_3d')^2;
+    gpy_ = @(pt_affine_3d) (M(2, :) * (M(3, :) * pt_affine_3d') - M(3, :) * (M(2, :) * pt_affine_3d')) / (M(3, :) * pt_affine_3d')^2;
+    
+    diff_record = zeros(100, 1); delta_record = zeros(100, 1); pts_affine_3d_record = zeros(100, 3);
+    estimated_depth_record = zeros(100,1); ground_truth_depth_record = zeros(100, 1);
+    ix_record = zeros(100,1); iy_record = zeros(100,1); J_record = zeros(100,1); sign_diff_record = zeros(100 ,1); l_record = zeros(100, 1);
+    for it_num = 1 : 3500
+        tot_diff_record = 0; ground_truth = 0; ix = 0; iy = 0; first_order = 0; hessian = 0;
+        for i = 1 : 1
+            plane_ind = visible_pt_3d(i, 6);
+            
+            % Calculate Diff_val
+            pt_affine_3d = [pts_3d{plane_ind}(theta, xc, yc, l, w, h, k1(i), k2(i)); 1]';
+            try
+                diff = diff_(pt_affine_3d);
+                tot_diff_record = tot_diff_record + diff^2; estimated_depth = estimated_depth_(pt_affine_3d);
+                % ix = px_(pt_affine_3d); iy = py_(pt_affine_3d);
+                % ground_truth = ground_truth_depth_(iy, ix);
+            catch ME
+                disp([num2str(i) ' skipped'])
+                length(k1)
+                continue;
+            end
+            % Calculate J3
+            J_x = zeros(6, 4);
+            for j = 1 : 6
+                J_x(j, :) = ([gradient_set{j}{plane_ind}(theta, xc, yc, l, w, h, k1(i), k2(i)); 0])';
+            end
+            J_x = J_x(activation_label, :);
+            J_3 = M(3, :) * J_x';
+            
+            % Calculate J2
+            px = px_(pt_affine_3d);
+            py = py_(pt_affine_3d);
+            % Ix = Ix_(px, py);
+            % Iy = Iy_(px, py);
+            % gpx = gpx_(pt_affine_3d);
+            % gpy = gpy_(pt_affine_3d);
+            % J_2 = Ix * gpx * J_x' + Iy * gpy * J_x';
+            % J_2 = 0;
+            
+            % J
+            % if(act_label(i))
+            %     J = J_3 - J_2;
+            % else
+            %     J_3 = 0;
+            %     J = J_3 - J_2;
+            % end
+            % J = J_3 - J_2;
+            J = J_3;
+            
+            hessian = hessian + J' * J;
+            first_order = first_order + diff * J';
+        end
+        %{
+        delta_test = 0.000001;
+        l1 = l + delta_test; l2 = l - delta_test;
+        pt_affine_3d1 = [pts_3d{plane_ind}(theta, xc, yc, l1, w, h, k1(i), k2(i)); 1]'; 
+        estimated_depth1 = estimated_depth_(pt_affine_3d1);
+        pt_affine_3d2 = [pts_3d{plane_ind}(theta, xc, yc, l2, w, h, k1(i), k2(i)); 1]';
+        estimated_depth2 = estimated_depth_(pt_affine_3d2);
+        diff1 = diff_(pt_affine_3d1); diff2 = diff_(pt_affine_3d2);
+        diff = diff_(pt_affine_3d);
+        grad = (diff1^2 - diff2^2) / 2 / delta_test;
+        % grad = (estimated_depth1 - estimated_depth2) / 2 / delta_test
+        grad_ = - 2 * J * diff;
+        if abs(grad - grad_) > 0.000001
+            error('gradient wrong')
+        end
+        %}
+        lastwarn('')
+        delta = inv(hessian) * first_order;
+        [warnMsg, ~] = lastwarn;
+        if ~isempty(warnMsg)
+            a = 1;
+        end
+        if it_num == 81 || it_num == 178
+            a = 1;
+        end
+        % theta = theta + 0.001 * delta;
+        l = l + 0.1 * delta;
+        diff_record(it_num) = tot_diff_record; delta_record(it_num) = delta; pts_affine_3d_record(it_num, :) = pt_affine_3d(1:3);
+        estimated_depth_record(it_num) = estimated_depth; ground_truth_depth_record(it_num) = ground_truth; J_record(it_num) = J;
+        sign_diff_record(it_num) = diff; l_record(it_num) = l - 0.1 * delta;
+        % ix_record(it_num) = ix; iy_record(it_num) = iy;
+    end
+    figure(1); clf; stem(diff_record,'filled', 'Marker', '.');
+    figure(2); clf; stem(delta_record, 'Marker', '.');
+    figure(3); clf; scatter3(pts_affine_3d_record(:,1),pts_affine_3d_record(:,2),pts_affine_3d_record(:,3),3,'r','filled')
+    figure(4); clf; stem(estimated_depth_record);
+    figure(5); clf; stem(ground_truth_depth_record);
+    figure(7); clf; stem(J_record, 'Marker', '.'); figure(8); clf; stem(sign_diff_record, 'Marker', '.');
+    figure(9); clf; stem(l_record, 'Marker', '.');
+    % figure(6); clf; stem(ix_record); figure(7); clf; stem(iy_record);
+end
 

@@ -1463,12 +1463,12 @@ function [hessian, first_order, tot_diff_record] = analytical_gradient(cuboid, P
     gra_pts_3d_ys{2} = @(theta, xc, yc, l, w, h, k1, k2)[
         0;
         1;
-        0 
+        0
         ];
     gra_pts_3d_ys{3} = @(theta, xc, yc, l, w, h, k1, k2)[
         0;
         1;
-        0 
+        0
         ];
     gra_pts_3d_ys{4} = @(theta, xc, yc, l, w, h, k1, k2)[
         0;
@@ -1547,7 +1547,7 @@ function [hessian, first_order, tot_diff_record] = analytical_gradient(cuboid, P
     gradient_set{4} = gra_pts_3d_l;
     gradient_set{5} = gra_pts_3d_w;
     gradient_set{6} = gra_pts_3d_h;
-       
+    
     activation_label = (activation_label == 1);
     
     k1 = visible_pt_3d(:, 4); k2 = visible_pt_3d(:, 5);
@@ -1617,7 +1617,7 @@ function [hessian, first_order, tot_diff_record] = analytical_gradient(cuboid, P
         %{
         delta_test = 0.000001;
         l1 = l + delta_test; l2 = l - delta_test;
-        pt_affine_3d1 = [pts_3d{plane_ind}(theta, xc, yc, l1, w, h, k1(i), k2(i)); 1]'; 
+        pt_affine_3d1 = [pts_3d{plane_ind}(theta, xc, yc, l1, w, h, k1(i), k2(i)); 1]';
         estimated_depth1 = estimated_depth_(pt_affine_3d1);
         pt_affine_3d2 = [pts_3d{plane_ind}(theta, xc, yc, l2, w, h, k1(i), k2(i)); 1]';
         estimated_depth2 = estimated_depth_(pt_affine_3d2);
@@ -1655,4 +1655,43 @@ function [hessian, first_order, tot_diff_record] = analytical_gradient(cuboid, P
     figure(9); clf; stem(l_record, 'Marker', '.');
     % figure(6); clf; stem(ix_record); figure(7); clf; stem(iy_record);
 end
-
+function params = find_local_optimal_on_fixed_points(obj, intrinsic_params, extrinsic_params, visible_pt_3d)
+    activation_label = [1 1 1 1 1 0];
+    gamma = 0.5; terminate_ratio = 0.05; delta_threshold = 0.001; max_it = 100; diff_record = zeros(max_it, 1); it_count = 0;
+    while it_count < max_it
+        it_count = it_count + 1;
+        cur_activation_label = cancel_co_activation_label(activation_label); activated_params_num = sum(double(cur_activation_label));
+        hessian = zeros(activated_params_num, activated_params_num); first_order = zeros(activated_params_num, 1);
+        [hessian, first_order, cur_tot_diff_record] = analytical_gradient(obj.cur_cuboid, intrinsic_params, extrinsic_params, visible_pt_3d, obj.depth_map, hessian, first_order, cur_activation_label);
+        [delta, ~] = calculate_delta(hessian, first_order);
+        [params_cuboid_order, ~] = update_params(obj.guess, delta, gamma, cur_activation_label, terminate_ratio);
+        obj.guess(1:6) = params_cuboid_order;
+        cx = params_cuboid_order(1); cy = params_cuboid_order(2); theta = params_cuboid_order(3); l = params_cuboid_order(4); w = params_cuboid_order(5); h = params_cuboid_order(6);
+        obj.cur_cuboid = generate_cuboid_by_center(cx, cy, theta, l, w, h);
+        diff_record(it_count) = cur_tot_diff_record;
+        if max(abs(delta)) < delta_threshold
+            break;
+        end
+    end
+    params = obj.guess;
+end
+function params = find_local_optimal_on_fixed_points(obj, intrinsic_params, extrinsic_params, visible_pt_3d)
+    activation_label = [1 1 1 1 1 0];
+    gamma = 0.5; terminate_ratio = 0.05; delta_threshold = 0.001; max_it = 100; diff_record = zeros(max_it, 1); it_count = 0;
+    while it_count < max_it
+        it_count = it_count + 1;
+        cur_activation_label = cancel_co_activation_label(activation_label); activated_params_num = sum(double(cur_activation_label));
+        hessian = zeros(activated_params_num, activated_params_num); first_order = zeros(activated_params_num, 1);
+        [hessian, first_order, cur_tot_diff_record] = analytical_gradient(obj.cur_cuboid, intrinsic_params, extrinsic_params, visible_pt_3d, obj.depth_map, hessian, first_order, cur_activation_label);
+        [delta, ~] = calculate_delta(hessian, first_order);
+        [params_cuboid_order, ~] = update_params(obj.guess, delta, gamma, cur_activation_label, terminate_ratio);
+        obj.guess(1:6) = params_cuboid_order;
+        cx = params_cuboid_order(1); cy = params_cuboid_order(2); theta = params_cuboid_order(3); l = params_cuboid_order(4); w = params_cuboid_order(5); h = params_cuboid_order(6);
+        obj.cur_cuboid = generate_cuboid_by_center(cx, cy, theta, l, w, h);
+        diff_record(it_count) = cur_tot_diff_record;
+        if max(abs(delta)) < delta_threshold
+            break;
+        end
+    end
+    params = obj.guess;
+end

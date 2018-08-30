@@ -1,5 +1,8 @@
-    % Get initial guess and point froma car
+% Get initial guess and point froma car
 load('exp_re/fixed_plane_estimation.mat');
+% objs{1}.guess = objs{1}.guess + randn([1 6]) * 0.1; 
+% cx = objs{1}.guess(1); cy = objs{1}.guess(2); theta = objs{1}.guess(3); l = objs{1}.guess(4); w = objs{1}.guess(5); h = objs{1}.guess(6);
+% objs{1}.cur_cuboid = generate_cuboid_by_center(cx, cy, theta, l, w, h);
 
 obj = objs{1}; extrinsic_params = get_new_extrinsic_params(extrinsic_params); depth_map = obj.depth_map;
 new_pts = obj.new_pts; linear_ind = obj.linear_ind; cuboid = obj.cur_cuboid; sample_pt_num = 10;
@@ -8,19 +11,22 @@ sampled_pts = sample_cubic_by_num(cuboid, sample_pt_num, sample_pt_num); image_s
 sampled_pts = sampled_pts(pts_estimated_vlaid, :); pts_estimated_2d = pts_estimated_2d(pts_estimated_vlaid, :); depth = depth(pts_estimated_vlaid);
 camera_origin = (-extrinsic_params(1:3, 1:3)' * extrinsic_params(1:3, 4))';
 cubics = {cuboid}; [visible_pt_3d, ~, ~] = find_visible_pt_global(cubics, pts_estimated_2d, sampled_pts, depth, intrinsic_params, extrinsic_params, camera_origin);
-
-params = find_local_optimal_on_fixed_points(obj, intrinsic_params, extrinsic_params, visible_pt_3d);
-
 figure(1)
-clf
+draw_cubic_shape_frame(objs{1}.cur_cuboid)
+hold on
+
+fin_params = analytical_gradient_v2(obj.cur_cuboid, intrinsic_params, extrinsic_params, visible_pt_3d, obj.depth_map);
+objs{1}.guess(1:5) = fin_params; cx = objs{1}.guess(1); cy = objs{1}.guess(2); theta = objs{1}.guess(3); l = objs{1}.guess(4); w = objs{1}.guess(5); h = objs{1}.guess(6);
+objs{1}.cur_cuboid = generate_cuboid_by_center(cx, cy, theta, l, w, h);
+figure(1)
 draw_cuboid(objs{1}.cur_cuboid)
 hold on
-scatter3(visible_pt_3d(:,1),visible_pt_3d(:,2),visible_pt_3d(:,3),3,'r','fill')
-figure(2)
-clf
-draw_cuboid(objs{1}.cur_cuboid)
-hold on
-scatter3(sampled_pts(:,1),sampled_pts(:,2),sampled_pts(:,3),3,'r','fill')
+scatter3(objs{1}.new_pts(:,1),objs{1}.new_pts(:,2),objs{1}.new_pts(:,3),3,'r','fill')
+
+function diff = calculate_differences(new_pts, extrinsic_params, intrinsic_params, depth_map)
+    height = size(depth_map, 1); width = size(depth_map, 2);
+    pts_2d = round(extrinsic_params * intrinsic_params * new_pts')';
+end
 
 function params = find_local_optimal_on_fixed_points(obj, intrinsic_params, extrinsic_params, visible_pt_3d)
     activation_label = [1 1 1 1 1 0];

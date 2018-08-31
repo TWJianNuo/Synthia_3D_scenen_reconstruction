@@ -30,7 +30,7 @@ function env_set()
     
     n = 294; tot_obj_dist = 0; tot_obj_diff = 0; tot_dist = 0; tot_diff = 0;
     
-    for frame = 1 : n
+    for frame = 151 : 151
         affine_matrx = Estimate_ground_plane(frame); save('affine_matrix.mat', 'affine_matrx');
         f = num2str(frame, '%06d');
         
@@ -68,12 +68,12 @@ function env_set()
             img = cubic_lines_of_2d(img, objs{i}.cur_cuboid, objs{i}.intrinsic_params, objs{i}.extrinsic_params);
         end
         path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Matlab_code/Synthia_3D_scenen_reconstruction/exp_re/metric.txt';
-        save_to_text(objs, frame, path);
+        % save_to_text(objs, frame, path);
         save_img(img, frame)
         disp(['Frame ' num2str(frame) ' Finished\n'])
-        % figure(1)
+        figure(1)
         % clf
-        % imshow(img)
+        imshow(img)
         
     end
     ave_dist = tot_dist / tot_obj_dist; ave_diff = tot_diff / tot_obj_diff;
@@ -84,7 +84,7 @@ function env_set()
     % img = imread(strcat(base_path, GT_RGB_path, num2str((frame-1), '%06d'), '.png'));
 end
 function save_img(img, frame)
-    path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/Car_reconstruction_results/';
+    path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/Other_re/';
     f = num2str(frame, '%06d');
     imwrite(img, [path f '.png']);
 end
@@ -214,7 +214,7 @@ function objs = get_init_guess(objs)
 end
 function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsic_params)
     % Only for car currently;
-    car_label = 8;
+    pedestrian_label = 10;
     tot_type_num = 15; % in total 15 labelled categories
     max_depth = max(max(depth_map));
     min_obj_pixel_num = [inf, 800, inf, inf, inf, 70, 10, 10, inf, 10, 10, inf, inf, inf, inf];
@@ -233,7 +233,7 @@ function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsi
             continue;
         end
         [ix, iy] = find(instance == cur_instance);
-        linear_ind = sub2ind(size(instance), ix, iy); selector = (label(linear_ind) == car_label); linear_ind = linear_ind(selector);
+        linear_ind = sub2ind(size(instance), ix, iy); selector = (label(linear_ind) == pedestrian_label); linear_ind = linear_ind(selector);
         if length(linear_ind) < 10
             continue
         end

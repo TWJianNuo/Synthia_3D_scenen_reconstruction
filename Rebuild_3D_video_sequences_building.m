@@ -28,10 +28,10 @@ function env_set()
     focal = 532.7403520000000; cx = 640; cy = 380; % baseline = 0.8;
     intrinsic_params = [focal, 0, cx; 0, focal, cy; 0, 0, 1]; intrinsic_params(4,4) = 1;
     
-    n = 294; tot_obj_dist = 0; tot_obj_diff = 0; tot_dist = 0; tot_diff = 0;
+    n = 294; tot_obj_num = 0; tot_dist = 0; tot_diff = 0;
     
     for frame = 1 : n
-        affine_matrx = Estimate_ground_plane(frame); save('affine_matrix.mat', 'affine_matrx');
+        [affine_matrx error] = Estimate_ground_plane(frame); save('affine_matrix.mat', 'affine_matrx');
         f = num2str(frame, '%06d');
         
         color_gt = imread(strcat(base_path, GT_Color_Label_path, num2str((frame-1), '%06d'), '.png'));
@@ -49,8 +49,6 @@ function env_set()
         ImagePath = strcat(base_path, GT_seg_path, f, '.png');
         [label, instance] = getIDs(ImagePath);
         
-        ImagePath = strcat(base_path, GT_RGB_path, f, '.png');
-        img = imread(ImagePath);
         
         % get_all_3d_pt(depth, extrinsic_params, intrinsic_params, label);
         objs = seg_image(depth, label, instance, extrinsic_params, intrinsic_params);
@@ -60,33 +58,22 @@ function env_set()
             objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_params, i);
         end
         
-        % draw_scene(objs, 1, color_gt);
+        draw_scene(objs, 1, color_gt);
         for i = 1 : length(objs)
             objs{i}.metric = calculate_metric(objs{i});
-            if ~isnan(objs{i}.metric(2)) tot_dist = tot_dist + objs{i}.metric(2); tot_obj_dist = tot_obj_dist + 1; end
-            if ~isnan(objs{i}.metric(1)) tot_diff = tot_diff + objs{i}.metric(1); tot_obj_diff = tot_obj_diff + 1; end
-            img = cubic_lines_of_2d(img, objs{i}.cur_cuboid, objs{i}.intrinsic_params, objs{i}.extrinsic_params);
+            tot_dist = tot_dist + objs{i}.metric(2); tot_diff = tot_diff + objs{i}.metric(1);
         end
         path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Matlab_code/Synthia_3D_scenen_reconstruction/exp_re/metric.txt';
         save_to_text(objs, frame, path);
-        save_img(img, frame)
-        disp(['Frame ' num2str(frame) ' Finished\n'])
-        % figure(1)
-        % clf
-        % imshow(img)
         
+        tot_obj_num = tot_obj_num + length(objs); 
     end
-    ave_dist = tot_dist / tot_obj_dist; ave_diff = tot_diff / tot_obj_diff;
+    ave_dist = tot_dist / tot_obj_num; ave_diff = tot_diff / tot_obj_num;
     save_mean_to_text(ave_dist, ave_diff, path)
     % Check:
     % mean_error = check_projection(objs, extrinsic_params,
     % intrinsic_params);
     % img = imread(strcat(base_path, GT_RGB_path, num2str((frame-1), '%06d'), '.png'));
-end
-function save_img(img, frame)
-    path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/Car_reconstruction_results/';
-    f = num2str(frame, '%06d');
-    imwrite(img, [path f '.png']);
 end
 function save_mean_to_text(ave_dist, ave_diff, path)
     fileID = fopen(path,'a');
@@ -140,7 +127,7 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
         hessian = zeros(activated_params_num, activated_params_num); first_order = zeros(activated_params_num, 1);
         [hessian, first_order] = analytical_gradient(objs{index}.cur_cuboid, intrinsic_params, extrinsic_params, visible_pt_3d, objs{index}.depth_map, hessian, first_order, cur_activation_label);
         
-        %{
+        
         figure(1)
         clf
         scatter3(visible_pt_3d(:,1), visible_pt_3d(:,2), visible_pt_3d(:,3), 3, 'r', 'fill');
@@ -148,7 +135,6 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
         draw_cuboid(cubics{index});
         hold on
         scatter3(objs{index}.new_pts(:,1), objs{index}.new_pts(:,2), objs{index}.new_pts(:,3), 3, 'g', 'fill')
-        %}
         
         [delta, terminate_flag_singular] = calculate_delta(hessian, first_order); [params_cuboid_order, terminate_flag] = update_params(objs{index}.guess, delta, gamma, cur_activation_label, terminate_ratio);
         objs{index}.guess(1:6) = params_cuboid_order;
@@ -161,7 +147,6 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
         end
     end
     objs = find_best_fit_cubic(objs, tot_dist_record, tot_params_record, index);
-    %{
     figure(1)
     clf
     scatter3(visible_pt_3d(:,1), visible_pt_3d(:,2), visible_pt_3d(:,3), 3, 'r', 'fill');
@@ -169,7 +154,6 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
     draw_cuboid(cubics{index});
     hold on
     scatter3(objs{index}.new_pts(:,1), objs{index}.new_pts(:,2), objs{index}.new_pts(:,3), 3, 'g', 'fill')
-    %}
 end
 function objs = find_best_fit_cubic(objs, tot_dist_record, tot_params_record, index)
     selector = (tot_dist_record ~= 0); tot_dist_record = tot_dist_record(selector); tot_params_record = tot_params_record(selector, :);
@@ -265,11 +249,9 @@ function ave_diff = calculate_depth_diff(depth_map, pts, extrinsic_params, intri
     % Code to check:
     depth_map_copy = depth_map; linear_ind = sub2ind(size(depth_map), pts2d(:,2), pts2d(:,1));
     depth_map_copy(linear_ind) = depth;
-    %{
     figure(4)
     clf
     show_depth_map(depth_map_copy);
-    %}
 end
 function [pts2d, depth] = get_2dloc_and_depth(pts, extrinsic_params, intrinsic_params, img_size)
     pts2d = (intrinsic_params * extrinsic_params * [pts(:, 1:3) ones(size(pts,1),1)]')';
@@ -389,38 +371,5 @@ function activation_label = cancel_co_activation_label(activation_label)
         else
             activation_label(5) = 0; activation_label(4) = 0;
         end
-    end
-end
-function img = cubic_lines_of_2d(img, cubic, intrinsic_params, extrinsic_params)
-    % color = uint8(randi([1 255], [1 3])); 
-    % color = rand([1 3]);
-    shapeInserter = vision.ShapeInserter('Shape', 'Lines', 'BorderColor', 'White');
-    pts3d = zeros(8,4);
-    for i = 1 : 4
-        pts3d(i, :) = [cubic{i}.pts(1, :) 1];
-    end
-    for i = 5 : 8
-        pts3d(i, :) = [cubic{5}.pts(i - 4, :) 1];
-    end
-    pts2d = (intrinsic_params * extrinsic_params * [pts3d(:, 1:3) ones(size(pts3d,1),1)]')';
-    depth = pts2d(:,3);
-    pts2d(:, 1) = pts2d(:,1) ./ depth; pts2d(:,2) = pts2d(:,2) ./ depth; pts2d = round(pts2d(:,1:2));
-    lines = zeros(12, 4); 
-    lines(4, :) = [pts2d(4, :) pts2d(1, :)];
-    lines(12, :) = [pts2d(5, :) pts2d(8, :)];
-    for i = 1 : 3
-        lines(i, :) = [pts2d(i, :) pts2d(i+1, :)];
-    end
-    for i = 1 : 4
-        lines(4 + i, :) = [pts2d(i, :), pts2d(i + 4, :)];
-    end
-    for i = 1 : 3
-        lines(8 + i, :) = [pts2d(i + 4, :) pts2d(i + 5, :)];
-    end
-    for i = 1 : 12
-        img = step(shapeInserter, img, int32([lines(i, 1) lines(i, 2) lines(i, 3) lines(i, 4)]));
-        % figure(1)
-        % imshow(img)
-        % pause()
     end
 end

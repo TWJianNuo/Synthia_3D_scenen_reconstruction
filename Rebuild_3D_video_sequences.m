@@ -36,7 +36,7 @@ function env_set()
     
     n = 958;
     
-    for frame = 1 : 1
+    for frame = 1 : 2
         f = num2str(frame, '%06d');
         
         color_gt = imread(strcat(base_path, GT_Color_Label_path, num2str((frame-1), '%06d'), '.png'));
@@ -151,33 +151,6 @@ function objs = find_best_fit_cubic(objs, tot_dist_record, tot_params_record, in
         Disp('Error occurred')
     end
 end
-function ave_dist = calculate_ave_distance(cuboid, pts)
-    theta_ = -cuboid{1}.theta; l = cuboid{1}.length1; w = cuboid{2}.length1; h = cuboid{1}.length2; bottom_center = mean(cuboid{5}.pts);
-    
-    transition = [
-        1,  0,  0,  -bottom_center(1);
-        0,  1,  0,  -bottom_center(2);
-        0,  0,  1,  -bottom_center(3)/2;
-        0,  0,  0,  1;
-        ];
-    r_on_z = [
-        cos(theta_) -sin(theta_)    0   0;
-        sin(theta_) cos(theta_)     0   0;
-        0           0               1   0;
-        0           0               0   1;
-        ];
-    scaling = [
-        1/l,    0,      0,      0;
-        0,    1/w,      0,      0;
-        0,      0,      1/h,    0;
-        0,      0,      0,      1;
-        ];
-    affine_matrix = scaling * r_on_z * transition;
-    pts = [pts(:, 1:3) ones(size(pts,1), 1)]; pts = (affine_matrix * pts')';
-    intern_dist = abs(pts(:,1:3)) - 0.5; intern_dist(intern_dist < 0) = 0;
-    dist = sum(intern_dist.^2, 2); dist = dist.^0.5; dist(dist == 0) = min(0.5 - abs(pts(dist == 0, 1 : 3)), [], 2);
-    ave_dist = sum(dist) / size(pts, 1);
-end
 function [delta, terminate_flag] = calculate_delta(hessian, first_order)
     lastwarn(''); % Empty existing warning
     delta = hessian \ first_order;
@@ -197,12 +170,13 @@ function cubics = distill_all_eisting_cubic_shapes(objs)
 end
 function objs = get_init_guess(objs)
     for i = 1 : length(objs)
-        objs = k_mean_check(objs, i);
-        % [params, cuboid] = estimate_rectangular(objs{i}.new_pts);
-        % objs{i}.guess = params;
-        % objs{i}.cur_cuboid = cuboid;
+        % objs = k_mean_check(objs, i);
+        [params, cuboid] = estimate_rectangular(objs{i}.new_pts);
+        objs{i}.guess = params;
+        objs{i}.cur_cuboid = cuboid;
     end
 end
+%{
 function objs = k_mean_check(objs, index)
     obj = objs{index};
     is_terminated = false;
@@ -231,6 +205,8 @@ function objs = k_mean_check(objs, index)
     end
     objs = split_cells(objs, index, center_num_old, next_params_old, idx_old, min_split_num);
 end
+%}
+%{
 function objs = split_cells(objs, index, center_num_old, next_params_old, idx_old, min_split_num)
     old_obj = objs{index};
     is_first = false;
@@ -245,6 +221,8 @@ function objs = split_cells(objs, index, center_num_old, next_params_old, idx_ol
         end
     end
 end
+%}
+%{
 function splitted_obj = give_value_to_splitted_obj(old_obj, next_params_old, idx_old, ind)
     splitted_obj = old_obj;
     guess = next_params_old(ind, :);
@@ -256,12 +234,15 @@ function splitted_obj = give_value_to_splitted_obj(old_obj, next_params_old, idx
     splitted_obj.depth_map = zeros(size(old_obj.depth_map));
     splitted_obj.depth_map(splitted_obj.linear_ind) = old_obj.depth_map(splitted_obj.linear_ind);
 end
+%}
+%{
 function volume = calculate_sum_volume(params)
     volume = 0;
     for i = 1 : size(params, 1)
         volume = volume + params(i, 4) * params(i, 5) * params(i, 6);
     end
 end
+%}
 function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsic_params)
     % Only for car currently;
     tot_type_num = 15; % in total 15 labelled categories
@@ -430,8 +411,6 @@ function objs = further_seg(extrinsic_params, intrinsic_params, image_size, objs
         ind_restore{i}.val(ind_restore{i}.num, :) = pts_2d(unique_ind(i), 1:2);
     end
     %}
-end
-function find_linear_ind()
 end
 function label = eliminate_type_pixel(label, min_obj_height, max_obj_height, extrinsic_params, intrinsic_params, depth_map, type)
     min_height = min_obj_height(type); max_height = max_obj_height(type);

@@ -17,12 +17,6 @@ env_set()
 % Reserved		13
 % Reserved      14
 % Traffic Light	15
-
-% Do not stick with the specific details of the problem
-% Do Single scene reconstruction first
-% Do Multiple scene reconstruction later on
-% Two problem, sampling problem and a termination condition selection
-% problem
 function env_set()
     base_path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/'; % base file path
     GT_Depth_path = 'Depth/Stereo_Left/Omni_F/'; % depth file path
@@ -34,9 +28,10 @@ function env_set()
     focal = 532.7403520000000; cx = 640; cy = 380; % baseline = 0.8;
     intrinsic_params = [focal, 0, cx; 0, focal, cy; 0, 0, 1]; intrinsic_params(4,4) = 1;
     
-    n = 958;
+    n = 294; tot_obj_dist = 0; tot_obj_diff = 0; tot_dist = 0; tot_diff = 0;
     
     for frame = 1 : 1
+        affine_matrx = Estimate_ground_plane(frame); save('affine_matrix.mat', 'affine_matrx');
         f = num2str(frame, '%06d');
         
         color_gt = imread(strcat(base_path, GT_Color_Label_path, num2str((frame-1), '%06d'), '.png'));
@@ -54,6 +49,8 @@ function env_set()
         ImagePath = strcat(base_path, GT_seg_path, f, '.png');
         [label, instance] = getIDs(ImagePath);
         
+        ImagePath = strcat(base_path, GT_RGB_path, f, '.png');
+        img = imread(ImagePath);
         
         % get_all_3d_pt(depth, extrinsic_params, intrinsic_params, label);
         objs = seg_image(depth, label, instance, extrinsic_params, intrinsic_params);
@@ -63,14 +60,49 @@ function env_set()
             objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_params, i);
         end
         
-        draw_scene(objs, 1, color_gt)
+        % draw_scene(objs, 1, color_gt);
+        for i = 1 : length(objs)
+            objs{i}.metric = calculate_metric(objs{i});
+            if ~isnan(objs{i}.metric(2)) tot_dist = tot_dist + objs{i}.metric(2); tot_obj_dist = tot_obj_dist + 1; end
+            if ~isnan(objs{i}.metric(1)) tot_diff = tot_diff + objs{i}.metric(1); tot_obj_diff = tot_obj_diff + 1; end
+            img = cubic_lines_of_2d(img, objs{i}.cur_cuboid, objs{i}.intrinsic_params, objs{i}.extrinsic_params);
+        end
+        path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Matlab_code/Synthia_3D_scenen_reconstruction/exp_re/metric.txt';
+        % save_to_text(objs, frame, path);
+        save_img(img, frame)
+        disp(['Frame ' num2str(frame) ' Finished\n'])
+        figure(1)
+        % clf
+        imshow(img)
+        
     end
+    ave_dist = tot_dist / tot_obj_dist; ave_diff = tot_diff / tot_obj_diff;
+    save_mean_to_text(ave_dist, ave_diff, path)
     % Check:
     % mean_error = check_projection(objs, extrinsic_params,
     % intrinsic_params);
     % img = imread(strcat(base_path, GT_RGB_path, num2str((frame-1), '%06d'), '.png'));
 end
-
+function save_img(img, frame)
+    path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/Other_re/';
+    f = num2str(frame, '%06d');
+    imwrite(img, [path f '.png']);
+end
+function save_mean_to_text(ave_dist, ave_diff, path)
+    fileID = fopen(path,'a');
+    fprintf(fileID,'Average Distance:\t%5d\n',ave_dist);
+    fprintf(fileID,'Average Difference:\t%5d\n',ave_diff);
+    fclose(fileID);
+end
+function save_to_text(objs, frame_num, path)
+    fileID = fopen(path,'a');
+    for i = 1 : length(objs)
+        fprintf(fileID,'Frame_num:\t%2d\n',frame_num);
+        fprintf(fileID,'3D Distance:\t%5d\n',objs{i}.metric(1));
+        fprintf(fileID,'Depth Difference:\t%5d\n',objs{i}.metric(2));
+    end
+    fclose(fileID);
+end
 function extrinsic_params = get_new_extrinsic_params(extrinsic_params)
     load('affine_matrix.mat');
     extrinsic_params = extrinsic_params / affine_matrx;
@@ -102,12 +134,13 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
         [pts_estimated_2d, pts_estimated_vlaid, ~, depth] = projectPoints(cur_pts, intrinsic_params(1:3, 1:3), extrinsic_params, [0,0,0,0,0], [image_size(1) image_size(2)], false);
         cur_pts = cur_pts(pts_estimated_vlaid, :); pts_estimated_2d = pts_estimated_2d(pts_estimated_vlaid, :); depth = depth(pts_estimated_vlaid);
         [visible_pt_3d, ~, ~] = find_visible_pt_global(cubics, pts_estimated_2d, cur_pts, depth, intrinsic_params, extrinsic_params, camera_origin);
+        objs{index}.visible_pt = visible_pt_3d;
         
         activated_params_num = sum(double(cur_activation_label));
         hessian = zeros(activated_params_num, activated_params_num); first_order = zeros(activated_params_num, 1);
         [hessian, first_order] = analytical_gradient(objs{index}.cur_cuboid, intrinsic_params, extrinsic_params, visible_pt_3d, objs{index}.depth_map, hessian, first_order, cur_activation_label);
         
-        
+        %{
         figure(1)
         clf
         scatter3(visible_pt_3d(:,1), visible_pt_3d(:,2), visible_pt_3d(:,3), 3, 'r', 'fill');
@@ -115,6 +148,7 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
         draw_cuboid(cubics{index});
         hold on
         scatter3(objs{index}.new_pts(:,1), objs{index}.new_pts(:,2), objs{index}.new_pts(:,3), 3, 'g', 'fill')
+        %}
         
         [delta, terminate_flag_singular] = calculate_delta(hessian, first_order); [params_cuboid_order, terminate_flag] = update_params(objs{index}.guess, delta, gamma, cur_activation_label, terminate_ratio);
         objs{index}.guess(1:6) = params_cuboid_order;
@@ -127,6 +161,7 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
         end
     end
     objs = find_best_fit_cubic(objs, tot_dist_record, tot_params_record, index);
+    %{
     figure(1)
     clf
     scatter3(visible_pt_3d(:,1), visible_pt_3d(:,2), visible_pt_3d(:,3), 3, 'r', 'fill');
@@ -134,6 +169,7 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
     draw_cuboid(cubics{index});
     hold on
     scatter3(objs{index}.new_pts(:,1), objs{index}.new_pts(:,2), objs{index}.new_pts(:,3), 3, 'g', 'fill')
+    %}
 end
 function objs = find_best_fit_cubic(objs, tot_dist_record, tot_params_record, index)
     selector = (tot_dist_record ~= 0); tot_dist_record = tot_dist_record(selector); tot_params_record = tot_params_record(selector, :);
@@ -148,36 +184,10 @@ function objs = find_best_fit_cubic(objs, tot_dist_record, tot_params_record, in
         objs{index}.guess = tot_params_record(min_index, :);
         objs{index}.cur_cuboid = generate_cuboid_by_center(cx, cy, theta, l, w, h);
     catch
-        Disp('Error occurred')
+        disp('Error occurred')
     end
 end
-function ave_dist = calculate_ave_distance(cuboid, pts)
-    theta_ = -cuboid{1}.theta; l = cuboid{1}.length1; w = cuboid{2}.length1; h = cuboid{1}.length2; bottom_center = mean(cuboid{5}.pts);
-    
-    transition = [
-        1,  0,  0,  -bottom_center(1);
-        0,  1,  0,  -bottom_center(2);
-        0,  0,  1,  -bottom_center(3)/2;
-        0,  0,  0,  1;
-        ];
-    r_on_z = [
-        cos(theta_) -sin(theta_)    0   0;
-        sin(theta_) cos(theta_)     0   0;
-        0           0               1   0;
-        0           0               0   1;
-        ];
-    scaling = [
-        1/l,    0,      0,      0;
-        0,    1/w,      0,      0;
-        0,      0,      1/h,    0;
-        0,      0,      0,      1;
-        ];
-    affine_matrix = scaling * r_on_z * transition;
-    pts = [pts(:, 1:3) ones(size(pts,1), 1)]; pts = (affine_matrix * pts')';
-    intern_dist = abs(pts(:,1:3)) - 0.5; intern_dist(intern_dist < 0) = 0;
-    dist = sum(intern_dist.^2, 2); dist = dist.^0.5; dist(dist == 0) = min(0.5 - abs(pts(dist == 0, 1 : 3)), [], 2);
-    ave_dist = sum(dist) / size(pts, 1);
-end
+
 function [delta, terminate_flag] = calculate_delta(hessian, first_order)
     lastwarn(''); % Empty existing warning
     delta = hessian \ first_order;
@@ -197,73 +207,14 @@ function cubics = distill_all_eisting_cubic_shapes(objs)
 end
 function objs = get_init_guess(objs)
     for i = 1 : length(objs)
-        objs = k_mean_check(objs, i);
-        % [params, cuboid] = estimate_rectangular(objs{i}.new_pts);
-        % objs{i}.guess = params;
-        % objs{i}.cur_cuboid = cuboid;
-    end
-end
-function objs = k_mean_check(objs, index)
-    obj = objs{index};
-    is_terminated = false;
-    [next_params, ~] = estimate_rectangular(obj.new_pts);
-    idx = ones(size(obj.linear_ind)); cur_volume = next_params(4) * next_params(5) * next_params(6); cur_center_num = 1;
-    split_threshold = 3; min_split_num = 4;
-    while true
-        if is_terminated
-            break
-        end
-        center_num_old = cur_center_num; next_params_old = next_params; idx_old = idx;
-        cur_center_num = cur_center_num + 1; next_params = zeros(cur_center_num, 6); idx = kmeans(obj.new_pts(:, 1:2),cur_center_num);
-        for i = 1 : cur_center_num
-            linear_ind = find(idx == i);
-            if length(linear_ind) >= min_split_num
-                next_params(i, :) = estimate_rectangular(obj.new_pts(linear_ind, :));
-            else
-                next_params(i, :) = [0, 0, 0, 0, 0, 0];
-            end
-        end
-        
-        if cur_volume / calculate_sum_volume(next_params) < split_threshold
-            is_terminated = true;
-        end
-        cur_volume = calculate_sum_volume(next_params);
-    end
-    objs = split_cells(objs, index, center_num_old, next_params_old, idx_old, min_split_num);
-end
-function objs = split_cells(objs, index, center_num_old, next_params_old, idx_old, min_split_num)
-    old_obj = objs{index};
-    is_first = false;
-    for i = 1 : center_num_old
-        if sum(double(idx_old == i)) > min_split_num
-            if ~is_first
-                objs{index} = give_value_to_splitted_obj(old_obj, next_params_old, idx_old, i);
-                is_first = true;
-            else
-                objs{end + 1} = give_value_to_splitted_obj(old_obj, next_params_old, idx_old, i);
-            end
-        end
-    end
-end
-function splitted_obj = give_value_to_splitted_obj(old_obj, next_params_old, idx_old, ind)
-    splitted_obj = old_obj;
-    guess = next_params_old(ind, :);
-    splitted_obj.guess = guess;
-    splitted_obj.cur_cuboid = generate_cuboid_by_center(guess(1),guess(2),guess(3),guess(4),guess(5),guess(6));
-    splitted_obj.linear_ind = old_obj.linear_ind(idx_old == ind);
-    splitted_obj.old_pts = old_obj.old_pts(idx_old == ind, :);
-    splitted_obj.new_pts = old_obj.new_pts(idx_old == ind, :);
-    splitted_obj.depth_map = zeros(size(old_obj.depth_map));
-    splitted_obj.depth_map(splitted_obj.linear_ind) = old_obj.depth_map(splitted_obj.linear_ind);
-end
-function volume = calculate_sum_volume(params)
-    volume = 0;
-    for i = 1 : size(params, 1)
-        volume = volume + params(i, 4) * params(i, 5) * params(i, 6);
+        [params, cuboid] = estimate_rectangular(objs{i}.new_pts);
+        objs{i}.guess = params;
+        objs{i}.cur_cuboid = cuboid;
     end
 end
 function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsic_params)
     % Only for car currently;
+    pedestrian_label = 10;
     tot_type_num = 15; % in total 15 labelled categories
     max_depth = max(max(depth_map));
     min_obj_pixel_num = [inf, 800, inf, inf, inf, 70, 10, 10, inf, 10, 10, inf, inf, inf, inf];
@@ -276,36 +227,10 @@ function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsi
     existing_instance = unique(instance);
     labelled_pixel = false(size(instance));
     
-    for i = 1 : length(existing_instance)
-        cur_instance = existing_instance(i);
-        if cur_instance == 0
-            continue;
-        end
-        [ix, iy] = find(instance == cur_instance);
-        linear_ind = sub2ind(size(instance), ix, iy);
-        labelled_pixel(linear_ind) = true;
-        
-        type = label(linear_ind(1));
-        instance_id = instance(linear_ind(1));
-        tot_obj_num = tot_obj_num + 1;
-        objs{tot_obj_num, 1} = init_single_obj(depth_map, linear_ind, extrinsic_params, intrinsic_params, type, instance_id, max_depth);
-        
-        instance(linear_ind) = 0;
-        label(linear_ind) = 0;
-    end
-    
-    
-    % Exclude void(0), reserved1(13), reserved2(14), sky(1), tree(6)
-    % road(3), sidewalk(4), fence(5), lanemarking(12)
-    
-    
-    % Eliminate leaf part of trees
-    tee_type = 6; pole_type = 7;
-    label = eliminate_type_pixel(label, min_obj_height, max_obj_height, extrinsic_params, intrinsic_params, depth_map, tee_type);
-    label = eliminate_type_pixel(label, min_obj_height, max_obj_height, extrinsic_params, intrinsic_params, depth_map, pole_type);
+    tee_type = 6; label = eliminate_type_pixel(label, min_obj_height, max_obj_height, extrinsic_params, intrinsic_params, depth_map, tee_type);
     for i = 1 : tot_type_num
         % Deal with tree
-        if i ~= 2 && i ~= 7 && i ~= 8 && i ~= 10 && i ~= 11 && i ~= 6
+        if i ~= tee_type
             continue
         end
         [ix, iy] = find(label == i);
@@ -341,31 +266,10 @@ function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsi
         warning('Some objects not distilled')
     end
     
-    % Eliminate objects pixel with height too high or too low
-    %{
-    i = 1;
-    while true
-        if i > length(objs)
-            break;
-        end
-        cur_height = objs{i}.new_pts(:,3);
-        selector = cur_height > min_obj_height(objs{i}.type) & cur_height < max_obj_height(objs{i}.type);
-        if sum(double(selector)) < min_obj_pixel_num(objs{i}.type)
-            objs(i) = [];
-            i = i -1;
-        else
-            objs{i}.depth_map(objs{i}.linear_ind(~selector)) = 0;
-            objs{i}.linear_ind = objs{i}.linear_ind(selector);
-            objs{i}.new_pts = objs{i}.new_pts(selector, :);
-            objs{i}.old_pts = objs{i}.old_pts(selector, :);
-        end
-        i = i + 1;
-    end
-    %}
     count = 0; visiting_ind = 1; it_length = length(objs);
     while count < it_length
         count = count + 1;
-        if objs{visiting_ind}.type == 6 || objs{visiting_ind}.type == 2
+        if objs{visiting_ind}.type == tee_type
             SE = strel('square',2);
             objs = further_seg(extrinsic_params, intrinsic_params, [300 300], objs, visiting_ind, SE, min_obj_pixel_num(objs{visiting_ind}.type));
             visiting_ind = visiting_ind - 1;
@@ -381,6 +285,38 @@ function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsi
             hold on
         end
     end
+end
+function metric = calculate_metric(obj)
+    % One term is the distance from the points to the cubic shape
+    % The other term is the differences between the depth 
+    pts = obj.new_pts;
+    cuboid = obj.cur_cuboid;
+    ave_dist = calculate_ave_distance(cuboid, pts);
+    ave_diff = calculate_depth_diff(obj.depth_map, obj.visible_pt, obj.extrinsic_params, obj.intrinsic_params);
+    metric = [ave_dist ave_diff];
+end
+function ave_diff = calculate_depth_diff(depth_map, pts, extrinsic_params, intrinsic_params)
+    [pts2d, depth] = get_2dloc_and_depth(pts, extrinsic_params, intrinsic_params, size(depth_map));
+    linear_ind = sub2ind(size(depth_map), pts2d(:,2), pts2d(:,1)); gt_depth = depth_map(linear_ind);
+    selector = (gt_depth ~= max(gt_depth)); ave_diff = sum((depth(selector) - gt_depth(selector)).^2) / sum(selector);
+    
+    % Code to check:
+    depth_map_copy = depth_map; linear_ind = sub2ind(size(depth_map), pts2d(:,2), pts2d(:,1));
+    depth_map_copy(linear_ind) = depth;
+    %{
+    figure(4)
+    clf
+    show_depth_map(depth_map_copy);
+    %}
+end
+function [pts2d, depth] = get_2dloc_and_depth(pts, extrinsic_params, intrinsic_params, img_size)
+    pts2d = (intrinsic_params * extrinsic_params * [pts(:, 1:3) ones(size(pts,1),1)]')';
+    depth = pts2d(:,3);
+    pts2d(:,1) = pts2d(:,1) ./ depth; pts2d(:,2) = pts2d(:,2) ./ depth;
+    pts2d = round(pts2d(:,1:2));
+    selector = (pts2d <= 0); pts2d(selector) = 1;
+    selector = (pts2d(:,1) > img_size(2)); pts2d(selector, 1) = img_size(2);
+    selector = (pts2d(:,2) > img_size(1)); pts2d(selector, 2) = img_size(1);
 end
 function objs = further_seg(extrinsic_params, intrinsic_params, image_size, objs, ind, SE, min_pixel_num)
     pts_3d = objs{ind}.new_pts;
@@ -407,31 +343,6 @@ function objs = further_seg(extrinsic_params, intrinsic_params, image_size, objs
             objs{end + 1, 1} = init_single_obj(depth_map, cur_linear_ind, extrinsic_params, intrinsic_params, type, 0, max_depth);
         end
     end
-    % Visualization
-    %{
-    figure(1)
-    imshow(bimg)
-    figure(2)
-    imshow(J);
-    figure(3)
-    scatter3(pts_2d(:,1), pts_2d(:,2), pts_2d(:,3), 3, 'r', 'fill')
-    axis  equal
-    %}
-    % Check:
-    %{
-    unique_ind = unique(linear_ind);
-    ind_restore = cell(length(unique_ind), 1);
-    for i = 1 : length(unique_ind)
-        if isempty(ind_restore{i})
-            ind_restore{i}.num = 0;
-            ind_restore{i}.val = zeros(6, 2);
-        end
-        ind_restore{i}.num = ind_restore{i}.num + 1;
-        ind_restore{i}.val(ind_restore{i}.num, :) = pts_2d(unique_ind(i), 1:2);
-    end
-    %}
-end
-function find_linear_ind()
 end
 function label = eliminate_type_pixel(label, min_obj_height, max_obj_height, extrinsic_params, intrinsic_params, depth_map, type)
     min_height = min_obj_height(type); max_height = max_obj_height(type);
@@ -454,17 +365,15 @@ function obj = init_single_obj(depth_map, linear_ind, extrinsic_params, intrinsi
     
     obj.old_pts = get_3d_pts(depth_map, extrinsic_params, intrinsic_params, obj.linear_ind);
     obj.new_pts = get_pt_on_new_coordinate_system(obj.old_pts);
+    obj.extrinsic_params = get_new_extrinsic_params(extrinsic_params); obj.intrinsic_params = intrinsic_params;
 end
 
-function draw_scene(objs, index, color_gt)
+function draw_scene(objs, fig_index, color_gt)
     cmap = colormap;
     new_color_gt = uint8(zeros(size(color_gt)));
-    figure(index)
+    figure(fig_index)
     clf
     for i = 1 : length(objs)
-        % if objs{i}.type ~= 6
-            % continue;
-        % end
         color = cmap(randi([1 64]), :);
         pts = objs{i}.new_pts;
         [I,J] = ind2sub(size(objs{i}.depth_map),objs{i}.linear_ind);
@@ -481,7 +390,6 @@ function draw_scene(objs, index, color_gt)
     imshow(color_gt)
     figure(3)
     imshow(new_color_gt)
-    1020 1825 A1
 end
 function reconstructed_3d = get_3d_pts(depth_map, extrinsic_params, intrinsic_params, valuable_ind)
     height = size(depth_map, 1);
@@ -519,5 +427,38 @@ function activation_label = cancel_co_activation_label(activation_label)
         else
             activation_label(5) = 0; activation_label(4) = 0;
         end
+    end
+end
+function img = cubic_lines_of_2d(img, cubic, intrinsic_params, extrinsic_params)
+    % color = uint8(randi([1 255], [1 3])); 
+    % color = rand([1 3]);
+    shapeInserter = vision.ShapeInserter('Shape', 'Lines', 'BorderColor', 'White');
+    pts3d = zeros(8,4);
+    for i = 1 : 4
+        pts3d(i, :) = [cubic{i}.pts(1, :) 1];
+    end
+    for i = 5 : 8
+        pts3d(i, :) = [cubic{5}.pts(i - 4, :) 1];
+    end
+    pts2d = (intrinsic_params * extrinsic_params * [pts3d(:, 1:3) ones(size(pts3d,1),1)]')';
+    depth = pts2d(:,3);
+    pts2d(:, 1) = pts2d(:,1) ./ depth; pts2d(:,2) = pts2d(:,2) ./ depth; pts2d = round(pts2d(:,1:2));
+    lines = zeros(12, 4); 
+    lines(4, :) = [pts2d(4, :) pts2d(1, :)];
+    lines(12, :) = [pts2d(5, :) pts2d(8, :)];
+    for i = 1 : 3
+        lines(i, :) = [pts2d(i, :) pts2d(i+1, :)];
+    end
+    for i = 1 : 4
+        lines(4 + i, :) = [pts2d(i, :), pts2d(i + 4, :)];
+    end
+    for i = 1 : 3
+        lines(8 + i, :) = [pts2d(i + 4, :) pts2d(i + 5, :)];
+    end
+    for i = 1 : 12
+        img = step(shapeInserter, img, int32([lines(i, 1) lines(i, 2) lines(i, 3) lines(i, 4)]));
+        % figure(1)
+        % imshow(img)
+        % pause()
     end
 end

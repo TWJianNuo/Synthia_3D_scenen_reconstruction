@@ -8329,3 +8329,9 @@ Average Distance:	2.119056e-06
 Average Difference:	9.565184e-02
 Average Distance:	1.369128e-05
 Average Difference:	1.303552e-01
+Average Distance:	2.543821e-01
+Average Difference:	7.612804e-02
+Average Distance:	3.512788e-01
+Average Difference:	8.311715e-02
+Average Distance:	3.947446e-01
+Average Difference:	8.959835e-02

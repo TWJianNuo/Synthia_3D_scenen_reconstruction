@@ -11,17 +11,14 @@ sampled_pts = sample_cubic_by_num(cuboid, sample_pt_num, sample_pt_num); image_s
 sampled_pts = sampled_pts(pts_estimated_vlaid, :); pts_estimated_2d = pts_estimated_2d(pts_estimated_vlaid, :); depth = depth(pts_estimated_vlaid);
 camera_origin = (-extrinsic_params(1:3, 1:3)' * extrinsic_params(1:3, 4))';
 cubics = {cuboid}; [visible_pt_3d, ~, ~] = find_visible_pt_global(cubics, pts_estimated_2d, sampled_pts, depth, intrinsic_params, extrinsic_params, camera_origin);
-figure(1)
-draw_cubic_shape_frame(objs{1}.cur_cuboid)
-hold on
 
-fin_params = analytical_gradient_v2(obj.cur_cuboid, intrinsic_params, extrinsic_params, visible_pt_3d, obj.depth_map);
+
+fin_params = analytical_gradient_v2(obj.cur_cuboid, intrinsic_params, extrinsic_params, visible_pt_3d, obj.depth_map, obj.new_pts);
 objs{1}.guess(1:5) = fin_params; cx = objs{1}.guess(1); cy = objs{1}.guess(2); theta = objs{1}.guess(3); l = objs{1}.guess(4); w = objs{1}.guess(5); h = objs{1}.guess(6);
 objs{1}.cur_cuboid = generate_cuboid_by_center(cx, cy, theta, l, w, h);
-figure(1)
-draw_cuboid(objs{1}.cur_cuboid)
-hold on
-scatter3(objs{1}.new_pts(:,1),objs{1}.new_pts(:,2),objs{1}.new_pts(:,3),3,'r','fill')
+% draw_cuboid(objs{1}.cur_cuboid)
+% hold on
+% scatter3(objs{1}.new_pts(:,1),objs{1}.new_pts(:,2),objs{1}.new_pts(:,3),3,'r','fill')
 
 function diff = calculate_differences(new_pts, extrinsic_params, intrinsic_params, depth_map)
     height = size(depth_map, 1); width = size(depth_map, 2);

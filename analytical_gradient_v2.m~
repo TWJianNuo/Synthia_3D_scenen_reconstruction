@@ -219,6 +219,7 @@ function fin_param = analytical_gradient_v2(cuboid, P, T, visible_pt_3d, depth_m
     num_val_pt = sum(gt_record ~= 0);
     for it_num = 1 : 200
         pt_affine_3d_record = zeros(num_val_pt, 3); count = 1;
+
         tot_diff_record = 0; first_order = 0; hessian = 0;
         for i = 1 : length(k1)
             plane_ind = visible_pt_3d(i, 6);
@@ -251,17 +252,6 @@ function fin_param = analytical_gradient_v2(cuboid, P, T, visible_pt_3d, depth_m
             hessian = hessian + J' * J;
             first_order = first_order + diff * J';
         end
-        
-        figure(1)
-        clf
-        cuboid = generate_cuboid_by_center(xc, yc, theta, l, w, h);
-        draw_cubic_shape_frame(cuboid)
-        hold on
-        scatter3(gt_pt_3d(:,1),gt_pt_3d(:,2),gt_pt_3d(:,3),3,'r','fill')
-        hold on
-        scatter3(pt_affine_3d_record(:,1),pt_affine_3d_record(:,2),pt_affine_3d_record(:,3),5,'b','fill')
-        axis equal
-        
         % delta = (hessian + eye(size(hessian,1))) \ first_order;
         delta = (hessian) \ first_order;
         cur_params = [theta xc yc l w 0]; cur_params(activation_label) = cur_params(activation_label) + delta' .* gamma(activation_label);

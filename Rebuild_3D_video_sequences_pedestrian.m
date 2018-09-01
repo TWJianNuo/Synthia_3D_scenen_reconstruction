@@ -30,7 +30,7 @@ function env_set()
     
     n = 294; tot_obj_dist = 0; tot_obj_diff = 0; tot_dist = 0; tot_diff = 0;
     
-    for frame = 151 : 151
+    for frame = 1 : 1
         affine_matrx = Estimate_ground_plane(frame); save('affine_matrix.mat', 'affine_matrx');
         f = num2str(frame, '%06d');
         

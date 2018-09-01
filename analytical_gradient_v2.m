@@ -1,14 +1,14 @@
 function fin_param = analytical_gradient_v2(cuboid, P, T, visible_pt_3d, depth_map, gt_pt_3d)
     % This is an edited version of the gradient algorithm
-    theta = cuboid{1}.theta;
+    theta = cuboid{1}.theta; close all
     l = cuboid{1}.length1; w = cuboid{2}.length1; h = cuboid{1}.length2;
     center = mean(cuboid{5}.pts); xc = center(1); yc = center(2);
     M = P * T;
     depth_map = [depth_map depth_map(:, end)]; depth_map = [depth_map; depth_map(end, :)];
     img_height = size(depth_map, 1); img_width = size(depth_map, 2);
-    gamma = [0.01 0.5 0.5 0.5 0.5 0.5];
+    gamma = [0.01 0.01 0.01 0.01 0.01 1.01];
     
-    activation_label = [0 0 0 1 1 0]; activation_label = (activation_label == 1);
+    activation_label = [0 0 0 0 1 0]; activation_label = (activation_label == 1);
     
     pts_3d = cell(1, 4);
     pts_3d{1} = @(theta, xc, yc, l, w, h, k1, k2)[
@@ -170,7 +170,6 @@ function fin_param = analytical_gradient_v2(cuboid, P, T, visible_pt_3d, depth_m
     
     px_ = @(pt_affine_3d)round((M(1, :) *  pt_affine_3d') / (M(3, :) * pt_affine_3d'));
     py_ = @(pt_affine_3d)round((M(2, :) *  pt_affine_3d') / (M(3, :) * pt_affine_3d'));
-    ground_truth_depth_ = @(px, py) depth_map(px, py);
     estimated_depth_ = @(pt_affine_3d) M(3, :) * pt_affine_3d';
     diff_ = @(pt_affine_3d, gt) gt - estimated_depth_(pt_affine_3d);
     
@@ -216,11 +215,11 @@ function fin_param = analytical_gradient_v2(cuboid, P, T, visible_pt_3d, depth_m
     % figure(2); show_depth_map(depth_check * 10);
     % figure(2); show_depth_map(depth_cpy * 10);
     % figure(3); show_depth_map(depth_map * 10);
-    num_val_pt = sum(gt_record ~= 0);
-    for it_num = 1 : 200
+    num_val_pt = sum(gt_record ~= 0); depth_record = zeros(70, 1); gt_depth_record = zeros(70, 1);
+    for it_num = 1 : 70
         pt_affine_3d_record = zeros(num_val_pt, 3); count = 1;
         tot_diff_record = 0; first_order = 0; hessian = 0;
-        for i = 1 : length(k1)
+        for i = 3 : 3
             plane_ind = visible_pt_3d(i, 6);
             
             % Calculate Diff_val
@@ -230,7 +229,15 @@ function fin_param = analytical_gradient_v2(cuboid, P, T, visible_pt_3d, depth_m
             end
             pt_affine_3d_record(count, :) = pt_affine_3d(1:3); count = count + 1;
             try
-                diff = diff_(pt_affine_3d, gt_record(i));
+                diff = diff_(pt_affine_3d, gt_record(i)); 
+                depth = (P * T * pt_affine_3d(1:4)')'; depth = depth(3);
+                if i == 3
+                    depth_record(it_num) = depth; gt_depth_record(it_num) = gt_record(i);
+                end
+                diff_debug = (gt_record(i) - depth);
+                if abs(diff - diff_debug) > 0.00001
+                    a = 1;
+                end
                 tot_diff_record = tot_diff_record + diff^2;
             catch
                 disp([num2str(i) ' skipped'])
@@ -259,16 +266,19 @@ function fin_param = analytical_gradient_v2(cuboid, P, T, visible_pt_3d, depth_m
         hold on
         scatter3(gt_pt_3d(:,1),gt_pt_3d(:,2),gt_pt_3d(:,3),3,'r','fill')
         hold on
-        scatter3(pt_affine_3d_record(:,1),pt_affine_3d_record(:,2),pt_affine_3d_record(:,3),5,'b','fill')
+        scatter3(pt_affine_3d_record(1,1),pt_affine_3d_record(1,2),pt_affine_3d_record(1,3),15,'b','fill')
         axis equal
-        
+        selector = (visible_pt_3d(:,6) == 1);
+        scatter3(visible_pt_3d(selector,1),visible_pt_3d(selector,2),visible_pt_3d(selector,3),9,'g','fill')
+        % scatter3(visible_pt_3d(:,1),visible_pt_3d(:,2),visible_pt_3d(:,3),9,'g','fill')
+        axis equal
         % delta = (hessian + eye(size(hessian,1))) \ first_order;
         delta = (hessian) \ first_order;
         cur_params = [theta xc yc l w 0]; cur_params(activation_label) = cur_params(activation_label) + delta' .* gamma(activation_label);
         theta = cur_params(1); xc = cur_params(2); yc = cur_params(3); l = cur_params(4); w = cur_params(5);
         diff_record(it_num) = tot_diff_record;
     end
-    fin_param = [xc, yc, theta, l, w];
+    fin_param = [xc, yc, theta, l, w]; figure(2); stem(abs(depth_record - gt_depth_record));
 end
 function show_depth_map(depth_map)
     imshow(uint16(depth_map * 1000));

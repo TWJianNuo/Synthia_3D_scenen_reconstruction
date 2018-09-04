@@ -30,7 +30,7 @@ function env_set()
     
     n = 294; tot_obj_dist = 0; tot_obj_diff = 0; tot_dist = 0; tot_diff = 0;
     
-    for frame = 1 : n
+    for frame = 1 : 1
         affine_matrx = Estimate_ground_plane(frame); save('affine_matrix.mat', 'affine_matrx');
         f = num2str(frame, '%06d');
         
@@ -67,17 +67,17 @@ function env_set()
             if ~isnan(objs{i}.metric(1)) tot_diff = tot_diff + objs{i}.metric(1); tot_obj_diff = tot_obj_diff + 1; end
             img = cubic_lines_of_2d(img, objs{i}.cur_cuboid, objs{i}.intrinsic_params, objs{i}.extrinsic_params);
         end
-        path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Matlab_code/Synthia_3D_scenen_reconstruction/exp_re/metric.txt';
-        save_to_text(objs, frame, path);
-        save_img(img, frame)
+        % path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Matlab_code/Synthia_3D_scenen_reconstruction/exp_re/metric.txt';
+        % save_to_text(objs, frame, path);
+        % save_img(img, frame)
         disp(['Frame ' num2str(frame) ' Finished\n'])
         % figure(1)
         % clf
         % imshow(img)
         
     end
-    ave_dist = tot_dist / tot_obj_dist; ave_diff = tot_diff / tot_obj_diff;
-    save_mean_to_text(ave_dist, ave_diff, path)
+    % ave_dist = tot_dist / tot_obj_dist; ave_diff = tot_diff / tot_obj_diff;
+    % save_mean_to_text(ave_dist, ave_diff, path)
     % Check:
     % mean_error = check_projection(objs, extrinsic_params,
     % intrinsic_params);
@@ -121,7 +121,7 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
     it_count = 0;
     is_terminated = false; terminate_ratio = 0.05; distortion_terminate_ratio = 1.1;
     max_it_num = 300;
-    tot_dist_record = zeros(max_it_num, 1); tot_params_record = zeros(max_it_num, 6);
+    tot_dist_record = zeros(max_it_num, 1); tot_params_record = zeros(max_it_num, 6); percentage = 0.01;
     
     tot_dist_record(1) = calculate_ave_distance(objs{index}.cur_cuboid, objs{index}.new_pts); tot_params_record(1, :) = objs{index}.guess;
     while ~is_terminated
@@ -133,12 +133,15 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
         cur_pts = sample_cubic_by_num(objs{index}.cur_cuboid, num1, num2);
         [pts_estimated_2d, pts_estimated_vlaid, ~, depth] = projectPoints(cur_pts, intrinsic_params(1:3, 1:3), extrinsic_params, [0,0,0,0,0], [image_size(1) image_size(2)], false);
         cur_pts = cur_pts(pts_estimated_vlaid, :); pts_estimated_2d = pts_estimated_2d(pts_estimated_vlaid, :); depth = depth(pts_estimated_vlaid);
-        [visible_pt_3d, ~, ~] = find_visible_pt_global(cubics, pts_estimated_2d, cur_pts, depth, intrinsic_params, extrinsic_params, camera_origin);
+        % [visible_pt_3d, ~, ~] = find_visible_pt_global(cubics, pts_estimated_2d, cur_pts, depth, intrinsic_params, extrinsic_params, camera_origin);
+        [visible_pt_3d, ~, ~] = find_visible_pt_global({objs{index}.cur_cuboid}, pts_estimated_2d, cur_pts, depth, intrinsic_params, extrinsic_params, camera_origin);
         objs{index}.visible_pt = visible_pt_3d;
-        
-        activated_params_num = sum(double(cur_activation_label));
-        hessian = zeros(activated_params_num, activated_params_num); first_order = zeros(activated_params_num, 1);
-        [hessian, first_order] = analytical_gradient(objs{index}.cur_cuboid, intrinsic_params, extrinsic_params, visible_pt_3d, objs{index}.depth_map, hessian, first_order, cur_activation_label);
+        correspondence = find_correspondence(objs{index}.cur_cuboid, objs{index}.new_pts, visible_pt_3d, percentage, num1, num2);
+        % activated_params_num = sum(double(cur_activation_label));
+        % hessian = zeros(activated_params_num, activated_params_num); first_order = zeros(activated_params_num, 1);
+        % [hessian, first_order] = analytical_gradient(objs{index}.cur_cuboid, intrinsic_params, extrinsic_params, visible_pt_3d, objs{index}.depth_map, hessian, first_order, cur_activation_label);
+        selector = (correspondence ~= 0);
+        fin_param = analytical_gradient_v2(objs{index}.cur_cuboid, intrinsic_params, extrinsic_params, visible_pt_3d(selector,:), objs{index}.depth_map, objs{index}.new_pts(correspondence(selector), :), objs{index}.new_pts);
         
         %{
         figure(1)
@@ -150,15 +153,16 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
         scatter3(objs{index}.new_pts(:,1), objs{index}.new_pts(:,2), objs{index}.new_pts(:,3), 3, 'g', 'fill')
         %}
         
-        [delta, terminate_flag_singular] = calculate_delta(hessian, first_order); [params_cuboid_order, terminate_flag] = update_params(objs{index}.guess, delta, gamma, cur_activation_label, terminate_ratio);
-        objs{index}.guess(1:6) = params_cuboid_order;
-        cx = params_cuboid_order(1); cy = params_cuboid_order(2); theta = params_cuboid_order(3); l = params_cuboid_order(4); w = params_cuboid_order(5); h = params_cuboid_order(6);
+        % [delta, terminate_flag_singular] = calculate_delta(hessian, first_order); [params_cuboid_order, terminate_flag] = update_params(objs{index}.guess, delta, gamma, cur_activation_label, terminate_ratio);
+        % objs{index}.guess(1:6) = params_cuboid_order;
+        objs{index}.guess(1:6) = fin_param;
+        cx = fin_param(1); cy = fin_param(2); theta = fin_param(3); l = fin_param(4); w = fin_param(5); h = fin_param(6);
         objs{index}.cur_cuboid = generate_cuboid_by_center(cx, cy, theta, l, w, h);
         ave_dist = calculate_ave_distance(objs{index}.cur_cuboid, objs{index}.new_pts); tot_dist_record(it_count + 1) = ave_dist; tot_params_record(it_count + 1, :) = objs{index}.guess;
-        
-        if max(abs(delta)) < delta_threshold || it_count >= max_it_num || terminate_flag || terminate_flag_singular || (tot_dist_record(it_count + 1) / min(tot_dist_record(1:(it_count + 1)))) > distortion_terminate_ratio
-            is_terminated = true;
-        end
+        is_terminated = true;
+        % if max(abs(delta)) < delta_threshold || it_count >= max_it_num || terminate_flag || terminate_flag_singular || (tot_dist_record(it_count + 1) / min(tot_dist_record(1:(it_count + 1)))) > distortion_terminate_ratio
+            % is_terminated = true;
+        % end
     end
     objs = find_best_fit_cubic(objs, tot_dist_record, tot_params_record, index);
     %{
@@ -260,7 +264,7 @@ end
 function ave_diff = calculate_depth_diff(depth_map, pts, extrinsic_params, intrinsic_params)
     [pts2d, depth] = get_2dloc_and_depth(pts, extrinsic_params, intrinsic_params, size(depth_map));
     linear_ind = sub2ind(size(depth_map), pts2d(:,2), pts2d(:,1)); gt_depth = depth_map(linear_ind);
-    selector = (gt_depth ~= max(gt_depth)); ave_diff = sum(abs(depth(selector) - gt_depth(selector))) / sum(selector);
+    selector = (gt_depth ~= max(gt_depth)); ave_diff = sum((depth(selector) - gt_depth(selector)).^2) / sum(selector);
     
     % Code to check:
     depth_map_copy = depth_map; linear_ind = sub2ind(size(depth_map), pts2d(:,2), pts2d(:,1));
@@ -423,4 +427,133 @@ function img = cubic_lines_of_2d(img, cubic, intrinsic_params, extrinsic_params)
         % imshow(img)
         % pause()
     end
+end
+function correspondence = find_correspondence(cuboid, gt_pts, visible_pts, percentage, num1, num2)
+    % figure(1)
+    % scatter3(gt_pts(:,1),gt_pts(:,2),gt_pts(:,3),5,'r');
+    % hold on
+    visible_plane = false(4, 1);
+    for i = 1 : 4
+        indices = find(visible_pts(:, 6) == i);
+        if length(indices) >= 1
+            visible_plane(i) = true;
+        end
+    end
+    
+    max_height = zeros(4, 1); x_y_plane = zeros(4, 2);
+    for i = 1 : 4
+        max_height(i) = cuboid{mod(i, 4) + 1}.length1;
+        x_y_plane(i, 1) = cuboid{i}.length1; x_y_plane(i, 2) = cuboid{i}.length2; 
+    end
+    correspondence = zeros(size(visible_pts, 1), 1);
+    for i = 1 : 4
+        plane_selector = (visible_pts(:, 6) == i);
+        if(visible_plane(i))
+            cur_max_height = max_height(i) * percentage;
+            
+            T = cuboid{i}.Tflat; x_unit = x_y_plane(i, 1) / num1 / 2; y_unit = x_y_plane(i, 2) / num2 / 2;
+            
+            
+            gt_pts_transmitted = (T * [gt_pts(:, 1:3) ones(size(gt_pts, 1), 1)]')';
+            visible_pts_transmitted = (T * [visible_pts(:, 1:3) ones(size(visible_pts, 1), 1)]')';
+            valid_gt_pts_transmitted = gt_pts_transmitted((abs(gt_pts_transmitted(:, 3)) < cur_max_height), :);
+            valid_gt_pts = gt_pts((abs(gt_pts_transmitted(:, 3)) < cur_max_height), :);
+            
+            global_ind = 1 : size(gt_pts, 1); local_ind = global_ind((abs(gt_pts_transmitted(:, 3)) < cur_max_height));
+            
+            valid_visible_pts_transmitted = visible_pts_transmitted(visible_pts(:, 6) == i, :);
+            valid_visible_pts = visible_pts(visible_pts(:, 6) == i, :);
+            local_correspondence = zeros(size(valid_visible_pts_transmitted, 1), 1);
+            
+            
+            for j = 1 : size(valid_visible_pts_transmitted, 1)
+                search_range = [
+                    valid_visible_pts_transmitted(j, 1) - x_unit, valid_visible_pts_transmitted(j, 1) + x_unit;
+                    valid_visible_pts_transmitted(j, 2) - y_unit, valid_visible_pts_transmitted(j, 2) + y_unit;
+                    ];
+                slected =   valid_gt_pts_transmitted(:,1) > search_range(1,1) & ... 
+                            valid_gt_pts_transmitted(:,1) < search_range(1,2) & ...
+                            valid_gt_pts_transmitted(:,2) > search_range(2,1) & ...
+                            valid_gt_pts_transmitted(:,2) < search_range(2,2);
+                local_selected_pts = valid_gt_pts(slected, 1 : 3);
+                if isempty(local_selected_pts)
+                    continue
+                end
+                local_local_ind = local_ind(slected);
+                %{
+                figure(1)
+                clf
+                draw_cubic_shape_frame(cuboid)
+                hold on
+                scatter3(local_selected_pts(:,1),local_selected_pts(:,2),local_selected_pts(:,3),8,'r','fill')
+                hold on
+                scatter3(valid_visible_pts(j, 1),valid_visible_pts(j, 2),valid_visible_pts(j, 3),20,'g','fill')
+                %}
+                
+                dist = sum((valid_visible_pts(j, 1 : 3) - local_selected_pts).^2, 2);
+                min_dist_ind = find(dist == min(dist)); min_dist_ind = min_dist_ind(1);
+                local_correspondence(j) = local_local_ind(min_dist_ind);
+                
+                %{
+                hold on
+                scatter3(local_selected_pts(min_dist_ind, 1),local_selected_pts(min_dist_ind, 2),local_selected_pts(min_dist_ind, 3),20,'b','fill')
+                axis equal
+                %}
+            end
+            correspondence(plane_selector) = local_correspondence;
+            %{
+            figure(1)
+            clf;
+            scatter3(gt_pts_transmitted(:,1),gt_pts_transmitted(:,2),gt_pts_transmitted(:,3),3,'r','fill')
+            hold on
+            axis equal
+            figure(2)
+            clf
+            selector = (visible_pts(:, 6) == i);
+            scatter3(visible_pts(selector, 1), visible_pts(selector, 2), visible_pts(selector, 3), 3, 'r', 'fill')
+            hold on
+            draw_cubic_shape_frame(cuboid)
+            hold on
+            scatter3(gt_pts(:,1), gt_pts(:,2), gt_pts(:,3), 3, 'g', 'fill')
+            axis equal
+            %}
+        end
+    end
+    %{
+    for i = 1 : size(visible_pts, 1)
+        if correspondence(i) == 0
+            continue;
+        end
+        figure(1)
+        clf
+        % color = rand([size(visible_pts, 1) 3]); selector = (correspondence ~= 0);
+        draw_cubic_shape_frame(cuboid)
+        hold on
+        scatter3(visible_pts(:,1),visible_pts(:,2),visible_pts(:,3),5,'g','fill')
+        % scatter3(visible_pts(selector,1),visible_pts(selector,2),visible_pts(selector,3),5,color(selector, :),'fill')
+        hold on
+        scatter3(gt_pts(:,1),gt_pts(:,2),gt_pts(:,3),5,'b','fill')
+        hold on
+        scatter3(visible_pts(i,1),visible_pts(i,2),visible_pts(i,3),10,'r','fill')
+        hold on
+        scatter3(gt_pts(correspondence(i),1),gt_pts(correspondence(i),2),gt_pts(correspondence(i),3),10,'r','fill')
+        % scatter3(gt_pts(correspondence(selector),1),gt_pts(correspondence(selector),2),gt_pts(correspondence(selector),3),5,color(selector, :),'fill')
+        pause()
+    end
+    %}
+    %{
+    figure(1)
+    clf
+    selector = (correspondence ~= 0);
+    draw_cubic_shape_frame(cuboid)
+    % hold on
+    % scatter3(visible_pts(:,1),visible_pts(:,2),visible_pts(:,3),5,'g','fill')
+    hold on
+    scatter3(gt_pts(:,1),gt_pts(:,2),gt_pts(:,3),5,'b','fill')
+    hold on
+    scatter3(visible_pts(selector,1),visible_pts(selector,2),visible_pts(selector,3),10,'r','fill')
+    hold on
+    scatter3(gt_pts(correspondence(selector),1),gt_pts(correspondence(selector),2),gt_pts(correspondence(selector),3),10,'r','fill')
+    axis equal
+    %}
 end

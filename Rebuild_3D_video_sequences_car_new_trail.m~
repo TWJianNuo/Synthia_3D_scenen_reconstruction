@@ -35,8 +35,7 @@ function env_set()
     path4 = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/Car_reconstruction_results/camera_info.txt';
     fileID1 = fopen(path1,'w'); fileID2 = fopen(path2,'w'); fileID3 = fopen(path3,'w'); fileID4 = fopen(path4,'w');
     
-    for frame = 1 : n
-        frame
+    for frame = 133 : 133
         [affine_matrx, mean_error] = Estimate_ground_plane(frame); save('affine_matrix.mat', 'affine_matrx');
         if mean_error > mean_error_th
             print_isvalid(frame, [fileID2 fileID4], zeros(0), zeros(0), zeros(0), false)
@@ -69,16 +68,24 @@ function env_set()
         for i = 1 : length(objs)
             objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_params, i, depth);
         end
-        % draw_scene(objs, 1, color_gt);
         for i = 1 : length(objs)
+            img = cubic_lines_of_2d(img, objs{i}.cur_cuboid, objs{i}.intrinsic_params, objs{i}.extrinsic_params);
+        end
+        save_img(img, frame)
+        % draw_scene(objs, 1, color_gt);
+        %{
+        for i = 1 : length(objs)
+            objs{i}.metric = calculate_metric(objs{i}, depth);
             if ~isnan(objs{i}.metric(2)) tot_dist = tot_dist + objs{i}.metric(2); tot_obj_dist = tot_obj_dist + 1; end
             if ~isnan(objs{i}.metric(1)) tot_diff = tot_diff + objs{i}.metric(1); tot_obj_diff = tot_obj_diff + 1; end
             img = cubic_lines_of_2d(img, objs{i}.cur_cuboid, objs{i}.intrinsic_params, objs{i}.extrinsic_params);
         end
+        %}
         print_error_info(objs, frame, fileID1);
-        print_isvalid(frame, [fileID2 fileID4], intrinsic_params, extrinsic_params, affine_matrx, true)
-        print_cubic_info(fileID3, objs, frame)
-        save_img(img, frame)
+        print_isvalid(frame, [fileID2 fileID4], intrinsic_params, extrinsic_params, affine_matrx, false)
+        for i = 1 : length(objs)
+            print_cubic_info(file_id, objs.guess)
+        end
         % save_img(img, frame)
         % disp(['Frame ' num2str(frame) ' Finished\n'])
         % figure(1)
@@ -86,9 +93,9 @@ function env_set()
         % imshow(img)
         
     end
-    ave_dist = tot_dist / tot_obj_dist; ave_diff = tot_diff / tot_obj_diff;
-    save_mean_to_text(ave_dist, ave_diff, fileID1)
     fclose(fileID1); fclose(fileID2); fclose(fileID3); fclose(fileID4);
+    % ave_dist = tot_dist / tot_obj_dist; ave_diff = tot_diff / tot_obj_diff;
+    % save_mean_to_text(ave_dist, ave_diff, path)
     % Check:
     % mean_error = check_projection(objs, extrinsic_params,
     % intrinsic_params);
@@ -100,14 +107,14 @@ function save_img(img, frame)
     imwrite(img, [path f '.png']);
 end
 function print_cubic_info(file_id, objs, frame_id)
-    fprintf(file_id, '%d\t%d\n', frame_id, length(objs));
-    for i = 1 : length(objs)
-        print_matrix(file_id, objs{i}.guess)
-    end
+    fprintf(file_id, '%d\t%d\n', frame_id)
+    print_matrix(file_id, guess)
 end
 function save_mean_to_text(ave_dist, ave_diff, fileID)
+    fileID = fopen(path,'a');
     fprintf(fileID,'Average Distance:\t%5d\n',ave_dist);
     fprintf(fileID,'Average Difference:\t%5d\n',ave_diff);
+    fclose(fileID);
 end
 function print_isvalid(frame_num, fileIDs, intrinsic, extrinsic, affine_matrix, isvalid)
     num = double(isvalid);
@@ -121,16 +128,16 @@ end
 function print_matrix(file_id, matrix)
     for i = 1 : size(matrix, 1)
         for j = 1 : size(matrix, 2)
-            fprintf(file_id, '%5d\t', matrix(i, j));
+            fprintf(file_id, '%d\t', matrix(i, j));
         end
         fprintf(file_id, '\n');
     end
 end
 function print_error_info(objs, frame_num, fileID)
-    fprintf(fileID,'%d\t%d\n',frame_num, length(objs));
     for i = 1 : length(objs)
-        fprintf(fileID,'%5d\t',objs{i}.metric(1));
-        fprintf(fileID,'%5d\n',objs{i}.metric(2));
+        fprintf(fileID,'Frame_num:\t%2d\n',frame_num);
+        fprintf(fileID,'3D Distance:\t%5d\n',objs{i}.metric(1));
+        fprintf(fileID,'Depth Difference:\t%5d\n',objs{i}.metric(2));
     end
 end
 function extrinsic_params = get_new_extrinsic_params(extrinsic_params)

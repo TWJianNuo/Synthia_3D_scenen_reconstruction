@@ -2530,3 +2530,31 @@ end
 function show_depth_map(depth_map)
     imshow(uint16(depth_map * 1000));
 end
+
+function ave_diff = calculate_depth_diff(depth_map, pts_cubic, extrinsic_params, intrinsic_params, is_init_guess, pts_obj)
+    [pts2d, depth] = get_2dloc_and_depth(pts_cubic, extrinsic_params, intrinsic_params, size(depth_map));
+    linear_ind = sub2ind(size(depth_map), pts2d(:,2), pts2d(:,1));
+    if is_init_guess
+        [gt_pts2d, ~] = get_2dloc_and_depth(pts_obj, extrinsic_params, intrinsic_params, size(depth_map));
+        linear_ind_loc = sub2ind(size(depth_map), gt_pts2d(:,2), gt_pts2d(:,1));
+        [tf, loc] = ismember(linear_ind, linear_ind_loc);
+        if sum(tf) == 0
+            ave_diff = -1;
+        else
+            ave_diff = sum(abs(depth(tf) - depth_map(linear_ind_loc(loc(tf))))) / sum(tf);
+        end
+    else
+        gt_depth = depth_map(linear_ind);
+        ave_diff = sum(abs(depth - gt_depth)) / length(linear_ind);
+    end
+    % selector = (gt_depth ~= max(gt_depth)); ave_diff = sqrt(sum((depth(selector) - gt_depth(selector)).^2)) / sum(selector);
+    
+    % Code to check:
+    %{
+    depth_map_copy = depth_map; linear_ind = sub2ind(size(depth_map), pts2d(:,2), pts2d(:,1));
+    depth_map_copy(linear_ind) = 20;
+    figure(4)
+    clf
+    show_depth_map(depth_map_copy);
+    %}
+end

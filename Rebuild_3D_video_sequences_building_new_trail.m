@@ -28,20 +28,10 @@ function env_set()
     focal = 532.7403520000000; cx = 640; cy = 380; % baseline = 0.8;
     intrinsic_params = [focal, 0, cx; 0, focal, cy; 0, 0, 1]; intrinsic_params(4,4) = 1;
     
-    n = 294; tot_obj_dist = 0; tot_obj_diff = 0; tot_dist = 0; tot_diff = 0; mean_error_th = 1e-3;
-    path1 = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/Car_reconstruction_results/metric.txt';
-    path2 = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/Car_reconstruction_results/is_frame_valid.txt';
-    path3 = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/Car_reconstruction_results/cubic_info.txt';
-    path4 = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/Car_reconstruction_results/camera_info.txt';
-    fileID1 = fopen(path1,'w'); fileID2 = fopen(path2,'w'); fileID3 = fopen(path3,'w'); fileID4 = fopen(path4,'w');
+    n = 294; tot_obj_dist = 0; tot_obj_diff = 0; tot_dist = 0; tot_diff = 0;
     
-    for frame = 1 : n
-        frame
-        [affine_matrx, mean_error] = Estimate_ground_plane(frame); save('affine_matrix.mat', 'affine_matrx');
-        if mean_error > mean_error_th
-            print_isvalid(frame, [fileID2 fileID4], zeros(0), zeros(0), zeros(0), false)
-            continue;
-        end
+    for frame = 1 : 1
+        affine_matrx = Estimate_ground_plane(frame); save('affine_matrix.mat', 'affine_matrx');
         f = num2str(frame, '%06d');
         
         color_gt = imread(strcat(base_path, GT_Color_Label_path, num2str((frame-1), '%06d'), '.png'));
@@ -69,16 +59,21 @@ function env_set()
         for i = 1 : length(objs)
             objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_params, i, depth);
         end
-        % draw_scene(objs, 1, color_gt);
         for i = 1 : length(objs)
+            img = cubic_lines_of_2d(img, objs{i}.cur_cuboid, objs{i}.intrinsic_params, objs{i}.extrinsic_params);
+        end
+        save_img(img, frame)
+        % draw_scene(objs, 1, color_gt);
+        %{
+        for i = 1 : length(objs)
+            objs{i}.metric = calculate_metric(objs{i}, depth);
             if ~isnan(objs{i}.metric(2)) tot_dist = tot_dist + objs{i}.metric(2); tot_obj_dist = tot_obj_dist + 1; end
             if ~isnan(objs{i}.metric(1)) tot_diff = tot_diff + objs{i}.metric(1); tot_obj_diff = tot_obj_diff + 1; end
             img = cubic_lines_of_2d(img, objs{i}.cur_cuboid, objs{i}.intrinsic_params, objs{i}.extrinsic_params);
         end
-        print_error_info(objs, frame, fileID1);
-        print_isvalid(frame, [fileID2 fileID4], intrinsic_params, extrinsic_params, affine_matrx, true)
-        print_cubic_info(fileID3, objs, frame)
-        save_img(img, frame)
+        %}
+        path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/Car_reconstruction_results/metric.txt';
+        save_to_text(objs, frame, path);
         % save_img(img, frame)
         % disp(['Frame ' num2str(frame) ' Finished\n'])
         % figure(1)
@@ -86,52 +81,60 @@ function env_set()
         % imshow(img)
         
     end
-    ave_dist = tot_dist / tot_obj_dist; ave_diff = tot_diff / tot_obj_diff;
-    save_mean_to_text(ave_dist, ave_diff, fileID1)
-    fclose(fileID1); fclose(fileID2); fclose(fileID3); fclose(fileID4);
+    % ave_dist = tot_dist / tot_obj_dist; ave_diff = tot_diff / tot_obj_diff;
+    % save_mean_to_text(ave_dist, ave_diff, path)
     % Check:
     % mean_error = check_projection(objs, extrinsic_params,
     % intrinsic_params);
     % img = imread(strcat(base_path, GT_RGB_path, num2str((frame-1), '%06d'), '.png'));
+end
+function [extrinsic_params, intrinsic_params, depth, label, instance, img] = acquire_img(num_frame)
+    base_path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/'; % base file path
+    GT_Depth_path = 'Depth/Stereo_Left/Omni_F/'; % depth file path
+    GT_seg_path = 'GT/LABELS/Stereo_Left/Omni_F/'; % Segmentation mark path
+    GT_RGB_path = 'RGB/Stereo_Left/Omni_F/';
+    GT_Color_Label_path = 'GT/COLOR/Stereo_Left/Omni_F/';
+    cam_para_path = 'CameraParams/Stereo_Left/Omni_F/';
+    
+    focal = 532.7403520000000; cx = 640; cy = 380; % baseline = 0.8;
+    intrinsic_params = [focal, 0, cx; 0, focal, cy; 0, 0, 1]; intrinsic_params(4,4) = 1;
+    frame = num_frame;
+    f = num2str(frame, '%06d');
+    % Get Camera parameter
+    txtPath = strcat(base_path, cam_para_path, num2str((frame-1), '%06d'), '.txt');
+    vec = load(txtPath);
+    extrinsic_params = reshape(vec, 4, 4);
+    
+    % Get Depth groundtruth
+    ImagePath = strcat(base_path, GT_Depth_path, f, '.png');
+    depth = getDepth(ImagePath);
+    
+    % Get segmentation mark groudtruth (Instance id looks broken)
+    ImagePath = strcat(base_path, GT_seg_path, f, '.png');
+    [label, instance] = getIDs(ImagePath);
+    
+    ImagePath = strcat(base_path, GT_RGB_path, f, '.png');
+    img = imread(ImagePath);
 end
 function save_img(img, frame)
     path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/Car_reconstruction_results/';
     f = num2str(frame, '%06d');
     imwrite(img, [path f '.png']);
 end
-function print_cubic_info(file_id, objs, frame_id)
-    fprintf(file_id, '%d\t%d\n', frame_id, length(objs));
-    for i = 1 : length(objs)
-        print_matrix(file_id, objs{i}.guess)
-    end
-end
-function save_mean_to_text(ave_dist, ave_diff, fileID)
+function save_mean_to_text(ave_dist, ave_diff, path)
+    fileID = fopen(path,'a');
     fprintf(fileID,'Average Distance:\t%5d\n',ave_dist);
     fprintf(fileID,'Average Difference:\t%5d\n',ave_diff);
+    fclose(fileID);
 end
-function print_isvalid(frame_num, fileIDs, intrinsic, extrinsic, affine_matrix, isvalid)
-    num = double(isvalid);
-    if frame_num == 1
-        print_matrix(fileIDs(2), intrinsic);
-        print_matrix(fileIDs(2), extrinsic);
-        print_matrix(fileIDs(2), affine_matrix);
-    end
-    fprintf(fileIDs(1), '%d\t%d\n', frame_num, num);
-end
-function print_matrix(file_id, matrix)
-    for i = 1 : size(matrix, 1)
-        for j = 1 : size(matrix, 2)
-            fprintf(file_id, '%5d\t', matrix(i, j));
-        end
-        fprintf(file_id, '\n');
-    end
-end
-function print_error_info(objs, frame_num, fileID)
-    fprintf(fileID,'%d\t%d\n',frame_num, length(objs));
+function save_to_text(objs, frame_num, path)
+    fileID = fopen(path,'a');
     for i = 1 : length(objs)
-        fprintf(fileID,'%5d\t',objs{i}.metric(1));
-        fprintf(fileID,'%5d\n',objs{i}.metric(2));
+        fprintf(fileID,'Frame_num:\t%2d\n',frame_num);
+        fprintf(fileID,'3D Distance:\t%5d\n',objs{i}.metric(1));
+        fprintf(fileID,'Depth Difference:\t%5d\n',objs{i}.metric(2));
     end
+    fclose(fileID);
 end
 function extrinsic_params = get_new_extrinsic_params(extrinsic_params)
     load('affine_matrix.mat');
@@ -286,11 +289,10 @@ function objs = get_init_guess(objs)
     end
 end
 function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsic_params)
-    % Only for car currently;
-    car_label = 8;
+    load('affine_matrix.mat')
     tot_type_num = 15; % in total 15 labelled categories
     max_depth = max(max(depth_map));
-    min_obj_pixel_num = [inf, 800, inf, inf, inf, 70, 10, 50, inf, 10, 10, inf, inf, inf, inf];
+    min_obj_pixel_num = [inf, 800, inf, inf, inf, 70, 10, 10, inf, 10, 10, inf, inf, inf, inf];
     min_obj_height = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     max_obj_height = [inf, inf, inf, inf, inf, 0.10, 0.42, inf, inf, inf, inf, inf, inf, inf, inf];
     
@@ -300,25 +302,38 @@ function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsi
     existing_instance = unique(instance);
     labelled_pixel = false(size(instance));
     
-    for i = 1 : length(existing_instance)
-        cur_instance = existing_instance(i);
-        if cur_instance == 0
-            continue;
-        end
-        [ix, iy] = find(instance == cur_instance);
-        linear_ind = sub2ind(size(instance), ix, iy); selector = (label(linear_ind) == car_label); linear_ind = linear_ind(selector);
-        if length(linear_ind) < min_obj_pixel_num(car_label)
+    frame_num = 294; building_type = 2;
+    
+    linear_ind_record = cell(frame_num, 1); pts_3d_old_record = cell(frame_num, 1); pts_3d_new_record = cell(frame_num, 1);
+    for i = 1 : frame_num
+        [extrinsic_params, intrinsic_params, depth_map, label, instance, img] = acquire_img(i);
+        [ix, iy] = find(label == building_type);
+        linear_ind_record{i} = sub2ind(size(instance), ix, iy); 
+        pts_3d_old_record{i} = get_3d_pts(depth_map, extrinsic_params, intrinsic_params, linear_ind_record{i});
+        pts_3d_new_record{i} = (affine_matrx * (pts_3d_old_record{i})')';
+    end
+    
+    tot_num = 0;
+    for i = 1 : frame_num
+        tot_num = tot_num + size(pts_3d_new_record{i}, 1);
+    end
+    pts_3d_new_tot = zeros(tot_num, 4); num_count = 0;
+    for i = 1 : frame_num
+        pts_3d_new_tot(num_count + 1 : num_count + size(pts_3d_new_record{i}, 1), :) = pts_3d_new_record{i};
+        num_count = num_count + size(pts_3d_new_record{i}, 1);
+    end
+    figure(1)
+    clf
+    scatter3(pts_3d_new_tot(:,1), pts_3d_new_tot(:,2), pts_3d_new_tot(:, 3), 3, 'r', 'fill')
+    
+     % label = eliminate_type_pixel(label, min_obj_height, max_obj_height, extrinsic_params, intrinsic_params, depth_map, building_type);
+    for i = 1 : tot_type_num
+        % Deal with tree
+        if i ~= building_type
             continue
         end
-        labelled_pixel(linear_ind) = true;
-        
-        type = label(linear_ind(1));
-        instance_id = instance(linear_ind(1));
-        tot_obj_num = tot_obj_num + 1;
-        objs{tot_obj_num, 1} = init_single_obj(depth_map, linear_ind, extrinsic_params, intrinsic_params, type, instance_id, max_depth);
-        
-        instance(linear_ind) = 0;
-        label(linear_ind) = 0;
+        [ix, iy] = find(label == i);
+        linear_ind = sub2ind(size(instance), ix, iy);
     end
 end
 function metric = calculate_metric(obj, depth_map)
@@ -551,80 +566,12 @@ function correspondence = find_correspondence(cuboid, gt_pts, visible_pts, perce
                     continue
                 end
                 local_local_ind = local_ind(slected);
-                %{
-                figure(1)
-                clf
-                draw_cubic_shape_frame(cuboid)
-                hold on
-                scatter3(local_selected_pts(:,1),local_selected_pts(:,2),local_selected_pts(:,3),8,'r','fill')
-                hold on
-                scatter3(valid_visible_pts(j, 1),valid_visible_pts(j, 2),valid_visible_pts(j, 3),20,'g','fill')
-                %}
                 
                 dist = sum((valid_visible_pts(j, 1 : 3) - local_selected_pts).^2, 2);
                 min_dist_ind = find(dist == min(dist)); min_dist_ind = min_dist_ind(1);
                 local_correspondence(j) = local_local_ind(min_dist_ind);
-                
-                %{
-                hold on
-                scatter3(local_selected_pts(min_dist_ind, 1),local_selected_pts(min_dist_ind, 2),local_selected_pts(min_dist_ind, 3),20,'b','fill')
-                axis equal
-                %}
             end
             correspondence(plane_selector) = local_correspondence;
-            %{
-            figure(1)
-            clf;
-            scatter3(gt_pts_transmitted(:,1),gt_pts_transmitted(:,2),gt_pts_transmitted(:,3),3,'r','fill')
-            hold on
-            axis equal
-            figure(2)
-            clf
-            selector = (visible_pts(:, 6) == i);
-            scatter3(visible_pts(selector, 1), visible_pts(selector, 2), visible_pts(selector, 3), 3, 'r', 'fill')
-            hold on
-            draw_cubic_shape_frame(cuboid)
-            hold on
-            scatter3(gt_pts(:,1), gt_pts(:,2), gt_pts(:,3), 3, 'g', 'fill')
-            axis equal
-            %}
         end
     end
-    %{
-    for i = 1 : size(visible_pts, 1)
-        if correspondence(i) == 0
-            continue;
-        end
-        figure(1)
-        clf
-        % color = rand([size(visible_pts, 1) 3]); selector = (correspondence ~= 0);
-        draw_cubic_shape_frame(cuboid)
-        hold on
-        scatter3(visible_pts(:,1),visible_pts(:,2),visible_pts(:,3),5,'g','fill')
-        % scatter3(visible_pts(selector,1),visible_pts(selector,2),visible_pts(selector,3),5,color(selector, :),'fill')
-        hold on
-        scatter3(gt_pts(:,1),gt_pts(:,2),gt_pts(:,3),5,'b','fill')
-        hold on
-        scatter3(visible_pts(i,1),visible_pts(i,2),visible_pts(i,3),10,'r','fill')
-        hold on
-        scatter3(gt_pts(correspondence(i),1),gt_pts(correspondence(i),2),gt_pts(correspondence(i),3),10,'r','fill')
-        % scatter3(gt_pts(correspondence(selector),1),gt_pts(correspondence(selector),2),gt_pts(correspondence(selector),3),5,color(selector, :),'fill')
-        pause()
-    end
-    %}
-    %{
-    figure(1)
-    clf
-    selector = (correspondence ~= 0);
-    draw_cubic_shape_frame(cuboid)
-    % hold on
-    % scatter3(visible_pts(:,1),visible_pts(:,2),visible_pts(:,3),5,'g','fill')
-    hold on
-    scatter3(gt_pts(:,1),gt_pts(:,2),gt_pts(:,3),5,'b','fill')
-    hold on
-    scatter3(visible_pts(selector,1),visible_pts(selector,2),visible_pts(selector,3),10,'r','fill')
-    hold on
-    scatter3(gt_pts(correspondence(selector),1),gt_pts(correspondence(selector),2),gt_pts(correspondence(selector),3),10,'r','fill')
-    axis equal
-    %}
 end

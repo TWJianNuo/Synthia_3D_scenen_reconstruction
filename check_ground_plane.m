@@ -1,6 +1,6 @@
-function [affine_matrx, mean_error] = Estimate_ground_plane(frame)
+function affine_matrx = Estimate_ground_plane()
     % Road  3
-    % frame = 2;
+    frame = 20;
     base_path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/'; % base file path
     GT_Depth_path = 'Depth/Stereo_Left/Omni_F/'; % depth file path
     GT_seg_path = 'GT/LABELS/Stereo_Left/Omni_F/'; % Segmentation mark path
@@ -10,32 +10,48 @@ function [affine_matrx, mean_error] = Estimate_ground_plane(frame)
     focal = 532.7403520000000; cx = 640; cy = 380; % baseline = 0.8;
     intrinsic_params = [focal, 0, cx; 0, focal, cy; 0, 0, 1]; intrinsic_params(4,4) = 1;
     
-    n = 294;
+    n = 294; error_record = zeros(n, 1); thold = 1e-5; reconstructed_3d_pts_record = cell(n, 1); affine_matrix_record = cell(n, 1);
     
-    f = num2str(frame, '%06d');
-    
-    % Get Camera parameter
-    txtPath = strcat(base_path, cam_para_path, num2str((frame-1), '%06d'), '.txt');
-    vec = load(txtPath);
-    extrinsic_params = reshape(vec, 4, 4);
-    
-    % Get Depth groundtruth
-    ImagePath = strcat(base_path, GT_Depth_path, f, '.png');
-    depth = getDepth(ImagePath);
-    
-    % Get segmentation mark groudtruth (Instance id looks broken)
-    ImagePath = strcat(base_path, GT_seg_path, f, '.png');
-    [label, ~] = getIDs(ImagePath);
-    
-    
-    [road_ix, road_iy] = find(label == 3);
-    linear_ind = sub2ind(size(label), road_ix, road_iy);
-    
-    reconstructed_3d = get_3d_pts(depth, extrinsic_params, intrinsic_params, linear_ind);
-    [affine_matrx, mean_error] = estimate_origin_ground_plane(reconstructed_3d);
-    
+    for frame = 1 : n
+        
+        f = num2str(frame, '%06d');
+        
+        % Get Camera parameter
+        txtPath = strcat(base_path, cam_para_path, num2str((frame-1), '%06d'), '.txt');
+        vec = load(txtPath);
+        extrinsic_params = reshape(vec, 4, 4);
+        
+        % Get Depth groundtruth
+        ImagePath = strcat(base_path, GT_Depth_path, f, '.png');
+        depth = getDepth(ImagePath);
+        
+        % Get segmentation mark groudtruth (Instance id looks broken)
+        ImagePath = strcat(base_path, GT_seg_path, f, '.png');
+        [label, ~] = getIDs(ImagePath);
+        
+        
+        [road_ix, road_iy] = find(label == 3);
+        linear_ind = sub2ind(size(label), road_ix, road_iy);
+        
+        reconstructed_3d = get_3d_pts(depth, extrinsic_params, intrinsic_params, linear_ind);
+        [affine_matrx, mean_error] = estimate_origin_ground_plane(reconstructed_3d);
+        
+        reconstructed_3d_pts_record{frame} = reconstructed_3d; affine_matrix_record{frame} = affine_matrx;
+        % error_record(frame) = mean_error;
+    end
+    for i = 1 : n
+        error_record(i) = estimate_error(affine_matrix_record{1}, reconstructed_3d_pts_record{i});
+    end
+    figure(1); stem(error_record, 'fill');
+    % figure(1)
+    % stem(error_record)
     % Check:
     % img = imread(strcat(base_path, GT_RGB_path, num2str((frame-1), '%06d'), '.png'));
+end
+function error = estimate_error(params, pts)
+    pts_new = (params * pts')'; 
+    height = pts_new(:, 3) - mean(pts_new(:, 3));
+    error = sum(abs(height)) / size(pts, 1);
 end
 function [affine_matrx, mean_error] = estimate_origin_ground_plane(pts)
     mean_pts = mean(pts);
@@ -43,7 +59,7 @@ function [affine_matrx, mean_error] = estimate_origin_ground_plane(pts)
     sum_mean_x2 = sum((pts(:,1) - mean_pts(1)).^2);
     sum_mean_y2 = sum((pts(:,2) - mean_pts(2)).^2);
     sum_mean_xz = sum((pts(:,1) - mean_pts(1)) .* (pts(:,3) - mean_pts(3)));
-    sum_mean_yz = sum((pts(:,2) - mean_pts(2)) .* (pts(:,3) - mean_pts(3)));    
+    sum_mean_yz = sum((pts(:,2) - mean_pts(2)) .* (pts(:,3) - mean_pts(3)));
     M = [sum_mean_x2 sum_mean_xy; sum_mean_xy sum_mean_y2];
     N = [sum_mean_xz; sum_mean_yz];
     param_intermediate = inv(M) * N;
@@ -64,14 +80,21 @@ function reconstructed_3d = get_3d_pts(depth_map, extrinsic_params, intrinsic_pa
 end
 function affine_transformation = get_affine_transformation_from_plane(param, pts)
     origin = mean(pts); origin = origin(1:3);
-    dir1 = (rand_sample_pt_on_plane(param) - rand_sample_pt_on_plane(param)); dir1 = dir1 / norm(dir1);
+    dir1 = (rand_sample_pt_on_plane(param, true) - rand_sample_pt_on_plane(param, false)); dir1 = dir1 / norm(dir1);
     dir3 = param(1:3); dir3 = dir3 / norm(dir3);
     dir2 = cross(dir1, dir3); dir2 = dir2 / norm(dir2);
     dir =[dir1;dir2;dir3];
     affine_transformation = get_affine_transformation(origin, dir);
 end
-function pt = rand_sample_pt_on_plane(param)
-    pt = randn([1 2]); pt = [pt, - (param(1) * pt(1) + param(2) * pt(2) + param(4)) / param(3)];
+function pt = rand_sample_pt_on_plane(param, flag)
+    if flag
+        pt = [0.246803226722827,0.224725490320235];
+    else
+        pt = [-0.511126612064835,1.17827305388577];
+    end
+    % pt = randn([1 2]); 
+    pt = [pt, - (param(1) * pt(1) + param(2) * pt(2) + param(4)) / param(3)];
+    
 end
 
 function affine_transformation = get_affine_transformation(origin, new_basis)
@@ -95,6 +118,6 @@ function affine_transformation = get_affine_transformation(origin, new_basis)
     transition_matrix(2, 4) = -pt_camera_origin_3d * y_dir';
     transition_matrix(3, 4) = -pt_camera_origin_3d * z_dir';
     affine_transformation = transition_matrix;
-    % Check: 
+    % Check:
     % (affine_transformation * [old_pts ones(3,1)]')'
 end

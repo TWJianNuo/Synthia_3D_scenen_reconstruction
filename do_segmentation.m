@@ -1,37 +1,36 @@
-
 [base_path, GT_Depth_path, GT_seg_path, GT_RGB_path, GT_Color_Label_path, cam_para_path] = get_file_storage_path();
 intrinsic_params = get_intrinsic_matrix();
-
-n = 294; mean_error_th = 1e-3;
-prev_mark = cell(0); max_instance = 1; exp_re_path = make_dir();
+n = 294; prev_mark = cell(0); max_instance = 1; exp_re_path = make_dir(); prev_mark_record = cell(n,1);
 for frame = 1 : n
-    [affine_matrx, mean_error] = Estimate_ground_plane(frame); save('affine_matrix.mat', 'affine_matrx');
-    if mean_error > mean_error_th
-        continue;
-    end
-    f = num2str(frame, '%06d');
-    % Get Camera parameter
-    txtPath = strcat(base_path, cam_para_path, num2str((frame-1), '%06d'), '.txt');
-    vec = load(txtPath);
-    extrinsic_params = reshape(vec, 4, 4);
-    
-    % Get Depth groundtruth
-    ImagePath = strcat(base_path, GT_Depth_path, f, '.png');
-    depth = getDepth(ImagePath);
-    
-    % Get segmentation mark groudtruth (Instance id looks broken)
-    ImagePath = strcat(base_path, GT_seg_path, f, '.png');
-    [label, instance] = getIDs(ImagePath);
-    
-    ImagePath = strcat(base_path, GT_RGB_path, f, '.png');
-    rgb = imread(ImagePath);
-    
-    % get_all_3d_pt(depth, extrinsic_params, intrinsic_params, label);
+    [affine_matrx, ~] = estimate_ground_plane(frame); save('affine_matrix.mat', 'affine_matrx');
+    [extrinsic_params, depth, label, instance, rgb] = grab_provided_data(frame);
+
     [max_instance, prev_mark] = seg_image(depth, label, instance, prev_mark, extrinsic_params, intrinsic_params, affine_matrx, max_instance, frame);
     plot_mark(prev_mark); F = getframe(gcf); [X, ~] = frame2im(F); imwrite(X, [exp_re_path '/3d_pts_' num2str(frame) '.png']);
     new_img = render_image(prev_mark, rgb); imwrite(new_img, [exp_re_path '/_instance_label' num2str(frame) '.png']);
+    prev_mark_record{frame} = prev_mark;
 end
-
+save_intance(prev_mark_record, size(label));
+% save('prev_mark_record.mat', 'prev_mark_record');
+function save_intance(prev_mark_record, image_size)
+    path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/GT/INSTANCE_BUILDINGS/Stereo_Left/Omni_F/';
+    for i = 1 : length(prev_mark_record)
+        img = zeros(image_size); obj = prev_mark_record{i};
+        for j = 1 : length(obj)
+            img(obj{j}.linear_ind) = obj{j}.instanceId;
+        end
+        full_path = [path num2str(i, '%06d') '.png'];
+        imwrite(img, full_path);
+    end
+end
+function [extrinsic_params, depth, label, instance, rgb] = grab_provided_data(frame)
+    [base_path, GT_Depth_path, GT_seg_path, GT_RGB_path, GT_Color_Label_path, cam_para_path] = get_file_storage_path();
+    f = num2str(frame, '%06d');
+    txtPath = strcat(base_path, cam_para_path, num2str((frame-1), '%06d'), '.txt'); vec = load(txtPath); extrinsic_params = reshape(vec, 4, 4);
+    ImagePath = strcat(base_path, GT_Depth_path, f, '.png'); depth = getDepth(ImagePath);
+    ImagePath = strcat(base_path, GT_seg_path, f, '.png'); [label, instance] = getIDs(ImagePath);
+    ImagePath = strcat(base_path, GT_RGB_path, f, '.png'); rgb = imread(ImagePath);
+end
 function path = make_dir()
     father_folder = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/';
     DateString = datestr(datetime('now'));
@@ -58,6 +57,9 @@ function reconstructed_3d = get_3d_pts(depth_map, extrinsic_params, intrinsic_pa
     reconstructed_3d = (inv(intrinsic_params * extrinsic_params) * projects_pts')';
 end
 function [max_instance, prev_mark] = seg_image(depth_map, label, instance, prev_mark, extrinsic_params, intrinsic_params, affine_matrx, max_instance, frame)
+    if frame == 9
+        a = 1;
+    end
     load('adjust_matrix.mat'); 
     if (frame > 1)  align_matrix = reshape(param_record(frame - 1, :),[4,4]); end
     building_type = 2; min_obj_pixel_num = [inf, 800, inf, inf, inf, 70, 10, 10, inf, 10, 10, inf, inf, inf, inf];
@@ -77,11 +79,8 @@ function [max_instance, prev_mark] = seg_image(depth_map, label, instance, prev_
                 now_found_bindices = [now_found_bindices; find(bimg_linear_ind == now_search_b_ind(j))];
             end
             if length(now_found_bindices) > min_obj_pixel_num(building_type)
-                cur_mark{obj_num_count}.linear_ind = linear_ind_record(now_found_bindices); cur_mark{obj_num_count}.instanceId = max_instance;
-                cur_mark{obj_num_count}.extrinsic_params = extrinsic_params; cur_mark{obj_num_count}.intrinsic_params = intrinsic_params;
-                cur_mark{obj_num_count}.affine_matrx = affine_matrx; cur_mark{obj_num_count}.pts_old = cur_old_pts_set(now_found_bindices, :);
-                cur_mark{obj_num_count}.color = rand([1 3]); cur_mark{obj_num_count}.pts_new = cur_new_pts_set(now_found_bindices, :);
-                obj_num_count = obj_num_count + 1; max_instance = max_instance + 1;
+                [cur_mark{obj_num_count}, max_instance] = init_mark(max_instance, linear_ind_record(now_found_bindices), extrinsic_params, intrinsic_params, affine_matrx, cur_old_pts_set(now_found_bindices, :), rand([1 3]), cur_new_pts_set(now_found_bindices, :));
+                obj_num_count = obj_num_count + 1;
             end
         end
     else
@@ -110,30 +109,29 @@ function [max_instance, prev_mark] = seg_image(depth_map, label, instance, prev_
             % figure(1); clf; scatter3(integrated_new_pts_set(now_found_bindices,1),integrated_new_pts_set(now_found_bindices,2),integrated_new_pts_set(now_found_bindices,3),3,integrated_color_set(now_found_bindices,:),'fill');
             if length(now_found_bindices) > min_obj_pixel_num(building_type)
                 unique_found_instance_id = unique(integrated_instance_set(now_found_bindices));
+                now_found_bindices = now_found_bindices(now_found_bindices > start_ind_of_cur_frame) - start_ind_of_cur_frame;
                 if length(unique_found_instance_id) == 1 && unique_found_instance_id(1) == 0
-                    now_found_bindices = now_found_bindices(now_found_bindices > start_ind_of_cur_frame) - start_ind_of_cur_frame;
-                    cur_mark{obj_num_count}.linear_ind = linear_ind_record(now_found_bindices); cur_mark{obj_num_count}.instanceId = max_instance;
-                    cur_mark{obj_num_count}.extrinsic_params = extrinsic_params; cur_mark{obj_num_count}.intrinsic_params = intrinsic_params;
-                    cur_mark{obj_num_count}.affine_matrx = affine_matrx; cur_mark{obj_num_count}.pts_old = cur_old_pts_set(now_found_bindices, :);
-                    cur_mark{obj_num_count}.color = rand([1 3]); cur_mark{obj_num_count}.pts_new = cur_new_pts_set(now_found_bindices, :);
-                    obj_num_count = obj_num_count + 1; max_instance = max_instance + 1;
+                    [cur_mark{obj_num_count}, max_instance] = init_mark(max_instance, linear_ind_record(now_found_bindices), extrinsic_params, intrinsic_params, affine_matrx, cur_old_pts_set(now_found_bindices, :), rand([1 3]), cur_new_pts_set(now_found_bindices, :));
+                    obj_num_count = obj_num_count + 1;
                 else
                     father_instanceId = min(unique_found_instance_id(unique_found_instance_id~=0));
-                    now_found_bindices = now_found_bindices(now_found_bindices > start_ind_of_cur_frame) - start_ind_of_cur_frame;
                     if (isempty(now_found_bindices)) continue; end
                     % figure(1); clf; scatter3(trans_cur_new_pts_set(now_found_bindices,1),trans_cur_new_pts_set(now_found_bindices,2),trans_cur_new_pts_set(now_found_bindices,3),3,'r','fill');
-                    cur_mark{obj_num_count}.linear_ind = linear_ind_record(now_found_bindices); cur_mark{obj_num_count}.instanceId = father_instanceId;
-                    cur_mark{obj_num_count}.extrinsic_params = extrinsic_params; cur_mark{obj_num_count}.intrinsic_params = intrinsic_params;
-                    cur_mark{obj_num_count}.affine_matrx = affine_matrx; cur_mark{obj_num_count}.pts_old = cur_old_pts_set(now_found_bindices, :);
-                    cur_mark{obj_num_count}.color = find_color(father_instanceId, prev_mark); cur_mark{obj_num_count}.pts_new = cur_new_pts_set(now_found_bindices, :);
-                    obj_num_count = obj_num_count + 1; max_instance = max_instance + 1;
-                    
+                    [cur_mark{obj_num_count}, max_instance] = init_mark(max_instance, linear_ind_record(now_found_bindices), extrinsic_params, intrinsic_params, affine_matrx, cur_old_pts_set(now_found_bindices, :), find_color(father_instanceId, prev_mark), cur_new_pts_set(now_found_bindices, :));
+                    obj_num_count = obj_num_count + 1;
                 end
             end
         end
     end
     indices = find(~cellfun('isempty', cur_mark)); cur_mark = cur_mark(indices); 
     prev_mark = cur_mark; % plot_mark(cur_mark);
+end
+function [cur_mark, max_instance] = init_mark(max_instance, linear_ind, extrinsic_params, intrinsic_params, affine_matrx, pts_old, color, pts_new)
+    cur_mark.linear_ind = linear_ind; cur_mark.instanceId = max_instance;
+    cur_mark.extrinsic_params = extrinsic_params; cur_mark.intrinsic_params = intrinsic_params;
+    cur_mark.affine_matrx = affine_matrx; cur_mark.pts_old = pts_old;
+    cur_mark.color = color; cur_mark.pts_new = pts_new;
+    max_instance = max_instance + 1;
 end
 function color = find_color(instanceId, prev)
     color = zeros(1,3);
@@ -159,21 +157,3 @@ function bimg_linear_ind = ind2d(pts2d, image_size)
     pixel_coordinate_y = (pts2d(:,2) - ymin) / (rangey / (image_size(2) - 1)); pixel_coordinate_y = round(pixel_coordinate_y) + 1;
     bimg_linear_ind = sub2ind(image_size, pixel_coordinate_y, pixel_coordinate_x);
 end
-% Label info below
-% Class         ID
-% Void          0
-% Sky           1
-% Building      2
-% Road          3
-% Sidewalk      4
-% Fence         5
-% Vegetation    6
-% Pole          7
-% Car           8
-% Traffic Sign  9
-% Pedestrian    10
-% Bicycle       11
-% Lanemarking	12
-% Reserved		13
-% Reserved      14
-% Traffic Light	15

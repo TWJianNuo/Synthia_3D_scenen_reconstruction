@@ -2791,3 +2791,81 @@ function affine_transformation = get_affine_transformation(origin, new_basis)
     % Check: 
     % (affine_transformation * [old_pts ones(3,1)]')'
 end
+function [max_instance, prev_mark] = seg_image(depth_map, label, instance, prev_mark, extrinsic_params, intrinsic_params, affine_matrx, max_instance, frame)
+    load('adjust_matrix.mat'); 
+    if (frame > 1)  align_matrix = reshape(param_record(frame - 1, :),[4,4]); end
+    building_type = 2; min_obj_pixel_num = [inf, 800, inf, inf, inf, 70, 10, 10, inf, 10, 10, inf, inf, inf, inf];
+    image_size = [600 600]; SE = strel('square',3);
+    [ix, iy] = find(label == building_type); linear_ind_record = sub2ind(size(depth_map), ix, iy);
+    
+    cur_old_pts_set = get_3d_pts(depth_map, extrinsic_params, intrinsic_params, linear_ind_record);
+    cur_new_pts_set = (affine_matrx * (cur_old_pts_set)')'; bimg = false(image_size);
+    
+    if isempty(prev_mark)
+        obj_num_count = 1;
+        bimg_linear_ind = ind2d(cur_new_pts_set(:, 1:2), image_size); bimg(bimg_linear_ind) = true; J = imdilate(bimg,SE); J = imerode(J,SE); CC = bwconncomp(J); 
+        cur_mark = cell(CC.NumObjects, 1); 
+        for i = 1 : CC.NumObjects
+            now_search_b_ind = CC.PixelIdxList{i}; now_found_bindices = zeros(0);
+            for j = 1 : length(now_search_b_ind)
+                now_found_bindices = [now_found_bindices; find(bimg_linear_ind == now_search_b_ind(j))];
+            end
+            if length(now_found_bindices) > min_obj_pixel_num(building_type)
+                cur_mark{obj_num_count}.linear_ind = linear_ind_record(now_found_bindices); cur_mark{obj_num_count}.instanceId = max_instance;
+                cur_mark{obj_num_count}.extrinsic_params = extrinsic_params; cur_mark{obj_num_count}.intrinsic_params = intrinsic_params;
+                cur_mark{obj_num_count}.affine_matrx = affine_matrx; cur_mark{obj_num_count}.pts_old = cur_old_pts_set(now_found_bindices, :);
+                cur_mark{obj_num_count}.color = rand([1 3]); cur_mark{obj_num_count}.pts_new = cur_new_pts_set(now_found_bindices, :);
+                obj_num_count = obj_num_count + 1; max_instance = max_instance + 1;
+            end
+        end
+    else
+        prev_new_pts_set = zeros(0); prev_old_pts_set = zeros(0); pre_new_pts = zeros(0); integrated_instance_set = zeros(0); integrated_color_set = zeros(0);
+        for i = 1 : length(prev_mark)
+            prev_new_pts_set = [prev_new_pts_set; prev_mark{i}.pts_new];
+            prev_old_pts_set = [prev_old_pts_set; prev_mark{i}.pts_old];
+            integrated_instance_set = [integrated_instance_set; prev_mark{i}.instanceId * ones(size(prev_mark{i}.pts_old,1),1)];
+            integrated_color_set = [integrated_color_set; repmat(prev_mark{i}.color, [size(prev_mark{i}.pts_old,1),1])];
+        end
+        integrated_instance_set = [integrated_instance_set; zeros(size(cur_old_pts_set, 1), 1)];
+        trans_cur_old_pts_set = (align_matrix * cur_old_pts_set')'; trans_cur_new_pts_set =  (prev_mark{i}.affine_matrx * trans_cur_old_pts_set')';
+        figure(1); clf; scatter3(trans_cur_new_pts_set(:,1),trans_cur_new_pts_set(:,2),trans_cur_new_pts_set(:,3),3,'r','fill');
+        hold on; scatter3(prev_new_pts_set(:,1),prev_new_pts_set(:,2),prev_new_pts_set(:,3),3,integrated_color_set(:,1),'fill')
+        integrated_new_pts_set = [prev_new_pts_set; trans_cur_new_pts_set]; start_ind_of_cur_frame = size(prev_new_pts_set, 1);
+        integrated_bimg_linear_ind = ind2d(integrated_new_pts_set(:, 1:2), image_size);
+        prev_bimg_linear_ind = integrated_bimg_linear_ind(1 : size(prev_new_pts_set, 1)); cur_bimg_linear_ind = integrated_bimg_linear_ind(size(pre_new_pts, 1) + 1 : end);
+        bimg(integrated_bimg_linear_ind) = true; J = imdilate(bimg,SE); J = imerode(J,SE); CC = bwconncomp(J); 
+        cur_mark = cell(CC.NumObjects, 1); obj_num_count = 1;
+        figure(2); imshow(J)
+        for i = 1 : CC.NumObjects
+            now_search_b_ind = CC.PixelIdxList{i}; now_found_bindices = zeros(0);
+            for j = 1 : length(now_search_b_ind)
+                now_found_bindices = [now_found_bindices; find(cur_bimg_linear_ind == now_search_b_ind(j))];
+            end
+            % figure(1); clf; scatter3(integrated_new_pts_set(now_found_bindices,1),integrated_new_pts_set(now_found_bindices,2),integrated_new_pts_set(now_found_bindices,3),3,integrated_color_set(now_found_bindices,:),'fill');
+            if length(now_found_bindices) > min_obj_pixel_num(building_type)
+                unique_found_instance_id = unique(integrated_instance_set(now_found_bindices));
+                if length(unique_found_instance_id) == 1 && unique_found_instance_id(1) == 0
+                    now_found_bindices = now_found_bindices(now_found_bindices > start_ind_of_cur_frame) - start_ind_of_cur_frame;
+                    cur_mark{obj_num_count}.linear_ind = linear_ind_record(now_found_bindices); cur_mark{obj_num_count}.instanceId = max_instance;
+                    cur_mark{obj_num_count}.extrinsic_params = extrinsic_params; cur_mark{obj_num_count}.intrinsic_params = intrinsic_params;
+                    cur_mark{obj_num_count}.affine_matrx = affine_matrx; cur_mark{obj_num_count}.pts_old = cur_old_pts_set(now_found_bindices, :);
+                    cur_mark{obj_num_count}.color = rand([1 3]); cur_mark{obj_num_count}.pts_new = cur_new_pts_set(now_found_bindices, :);
+                    obj_num_count = obj_num_count + 1; max_instance = max_instance + 1;
+                else
+                    father_instanceId = min(unique_found_instance_id(unique_found_instance_id~=0));
+                    now_found_bindices = now_found_bindices(now_found_bindices > start_ind_of_cur_frame) - start_ind_of_cur_frame;
+                    if (isempty(now_found_bindices)) continue; end
+                    % figure(1); clf; scatter3(trans_cur_new_pts_set(now_found_bindices,1),trans_cur_new_pts_set(now_found_bindices,2),trans_cur_new_pts_set(now_found_bindices,3),3,'r','fill');
+                    cur_mark{obj_num_count}.linear_ind = linear_ind_record(now_found_bindices); cur_mark{obj_num_count}.instanceId = father_instanceId;
+                    cur_mark{obj_num_count}.extrinsic_params = extrinsic_params; cur_mark{obj_num_count}.intrinsic_params = intrinsic_params;
+                    cur_mark{obj_num_count}.affine_matrx = affine_matrx; cur_mark{obj_num_count}.pts_old = cur_old_pts_set(now_found_bindices, :);
+                    cur_mark{obj_num_count}.color = find_color(father_instanceId, prev_mark); cur_mark{obj_num_count}.pts_new = cur_new_pts_set(now_found_bindices, :);
+                    obj_num_count = obj_num_count + 1; max_instance = max_instance + 1;
+                    
+                end
+            end
+        end
+    end
+    indices = find(~cellfun('isempty', cur_mark)); cur_mark = cur_mark(indices); 
+    prev_mark = cur_mark; % plot_mark(cur_mark);
+end

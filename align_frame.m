@@ -1,7 +1,7 @@
 run('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Matlab_code/Synthia_3D_scenen_reconstruction/vlfeat-0.9.21/toolbox/vl_setup')
 n = 294; error_record = zeros(n, 1); thold = 1e-5; % reconstructed_3d_pts_record = cell(n, 1); affine_matrix_record = cell(n, 1);
 exp_re_path = make_dir(); error_recorder1 = zeros(n-1,1); error_recorder2 = zeros(n-1,1); param_record = zeros(n-1, 16);
-for frame = 60 : n - 1
+for frame = 8 : n - 1
     disp(['frame ' num2str(frame) ' finied\n'])
     % f1 = num2str(frame, '%06d'); f2 = num2str(frame + 1, '%06d');
     
@@ -37,7 +37,7 @@ for frame = 60 : n - 1
     figure(1);clf;scatter3(all_pts1(:,1),all_pts1(:,2),all_pts1(:,3),3,'r','fill'); hold on;
     scatter3(all_pts2_transformed1(:,1),all_pts2_transformed1(:,2),all_pts2_transformed1(:,3),3,'b','fill'); hold on; axis equal; [az,el] = view;
     F = getframe(gcf); [X1, Map] = frame2im(F);
-    figure(1);clf;scatter3(all_pts1(:,1),all_pts1(:,2),all_pts1(:,3),3,'r','fill'); hold on;
+    figure(2);clf;scatter3(all_pts1(:,1),all_pts1(:,2),all_pts1(:,3),3,'r','fill'); hold on;
     scatter3(all_pts2_transformed2(:,1),all_pts2_transformed2(:,2),all_pts2_transformed2(:,3),3,'b','fill'); hold on; axis equal; view([az,el]);
     F = getframe(gcf); [X2, Map] = frame2im(F); X2 = imresize(X2, [size(X1,1) size(X1,2)]);
     X = [X1 X2]; imwrite(X, [exp_re_path '/3d_pts_' num2str(frame) '.png']);
@@ -143,8 +143,9 @@ function [param, error] = RANSAC_estimation(cores_pts1, cores_pts2)
     error = min(dist_record) / ceil(size(cores_pts1,1) * frac);
     ind = find(dist_record == min(dist_record)); ind = ind(1); param = reshape(param_record(ind,:), [4,4]);
     % tred_pts = (param * cores_pts2')';
-    % figure(1); clf; scatter3(cores_pts1(:,1),cores_pts1(:,2),cores_pts1(:,3),3,'r','fill'); hold on;
-    % scatter3(tred_pts(:,1),tred_pts(:,2),tred_pts(:,3),3,'g','fill'); hold on; scatter3(cores_pts2(:,1),cores_pts2(:,2),cores_pts2(:,3),3,'b','fill');
+    % figure(1); clf;
+    % scatter3(cores_pts1(:,1),cores_pts1(:,2),cores_pts1(:,3),3,'r','fill'); hold on; scatter3(cores_pts2(:,1),cores_pts2(:,2),cores_pts2(:,3),3,'b','fill');
+    % scatter3(tred_pts(:,1),tred_pts(:,2),tred_pts(:,3),3,'g','fill'); hold on; 
 end
 function [param, error] = RANSAC_estimation_2(cores_pts1, cores_pts2)
     % Synthia dataset, error comes from Feature points selection procedure

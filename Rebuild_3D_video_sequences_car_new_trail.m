@@ -36,7 +36,7 @@ function env_set()
     fileID1 = fopen(path1,'w'); fileID2 = fopen(path2,'w'); fileID3 = fopen(path3,'w'); fileID4 = fopen(path4,'w');
     
     for frame = 1 : n
-        frame
+        % frame
         [affine_matrx, mean_error] = Estimate_ground_plane(frame); save('affine_matrix.mat', 'affine_matrx');
         if mean_error > mean_error_th
             print_isvalid(frame, [fileID2 fileID4], zeros(0), zeros(0), zeros(0), false)
@@ -79,8 +79,8 @@ function env_set()
         print_isvalid(frame, [fileID2 fileID4], intrinsic_params, extrinsic_params, affine_matrx, true)
         print_cubic_info(fileID3, objs, frame)
         save_img(img, frame)
-        % save_img(img, frame)
-        % disp(['Frame ' num2str(frame) ' Finished\n'])
+        save_img(img, frame)
+        disp(['Frame ' num2str(frame) ' Finished/n'])
         % figure(1)
         % clf
         % imshow(img)
@@ -113,9 +113,10 @@ function print_isvalid(frame_num, fileIDs, intrinsic, extrinsic, affine_matrix, 
     num = double(isvalid);
     if frame_num == 1
         print_matrix(fileIDs(2), intrinsic);
-        print_matrix(fileIDs(2), extrinsic);
-        print_matrix(fileIDs(2), affine_matrix);
     end
+    fprintf(fileIDs(2), '%d\n', frame_num);
+    print_matrix(fileIDs(2), extrinsic);
+    print_matrix(fileIDs(2), affine_matrix);
     fprintf(fileIDs(1), '%d\t%d\n', frame_num, num);
 end
 function print_matrix(file_id, matrix)
@@ -290,7 +291,7 @@ function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsi
     car_label = 8;
     tot_type_num = 15; % in total 15 labelled categories
     max_depth = max(max(depth_map));
-    min_obj_pixel_num = [inf, 800, inf, inf, inf, 70, 10, 50, inf, 10, 10, inf, inf, inf, inf];
+    min_obj_pixel_num = [inf, 800, inf, inf, inf, 70, 10, 100, inf, 10, 10, inf, inf, inf, inf];
     min_obj_height = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     max_obj_height = [inf, inf, inf, inf, inf, 0.10, 0.42, inf, inf, inf, inf, inf, inf, inf, inf];
     
@@ -551,80 +552,43 @@ function correspondence = find_correspondence(cuboid, gt_pts, visible_pts, perce
                     continue
                 end
                 local_local_ind = local_ind(slected);
-                %{
-                figure(1)
-                clf
-                draw_cubic_shape_frame(cuboid)
-                hold on
-                scatter3(local_selected_pts(:,1),local_selected_pts(:,2),local_selected_pts(:,3),8,'r','fill')
-                hold on
-                scatter3(valid_visible_pts(j, 1),valid_visible_pts(j, 2),valid_visible_pts(j, 3),20,'g','fill')
-                %}
+                
+                % figure(2)
+                % clf
+                % draw_cubic_shape_frame(cuboid)
+                % hold on
+                % scatter3(local_selected_pts(:,1),local_selected_pts(:,2),local_selected_pts(:,3),8,'r','fill')
+                % hold on
+                % scatter3(valid_visible_pts(j, 1),valid_visible_pts(j, 2),valid_visible_pts(j, 3),20,'g','fill')
+                
                 
                 dist = sum((valid_visible_pts(j, 1 : 3) - local_selected_pts).^2, 2);
                 min_dist_ind = find(dist == min(dist)); min_dist_ind = min_dist_ind(1);
                 local_correspondence(j) = local_local_ind(min_dist_ind);
                 
-                %{
-                hold on
-                scatter3(local_selected_pts(min_dist_ind, 1),local_selected_pts(min_dist_ind, 2),local_selected_pts(min_dist_ind, 3),20,'b','fill')
-                axis equal
-                %}
+                
+                % hold on
+                % scatter3(local_selected_pts(min_dist_ind, 1),local_selected_pts(min_dist_ind, 2),local_selected_pts(min_dist_ind, 3),20,'b','fill')
+                % axis equal
+                
             end
             correspondence(plane_selector) = local_correspondence;
-            %{
-            figure(1)
-            clf;
-            scatter3(gt_pts_transmitted(:,1),gt_pts_transmitted(:,2),gt_pts_transmitted(:,3),3,'r','fill')
-            hold on
-            axis equal
-            figure(2)
-            clf
-            selector = (visible_pts(:, 6) == i);
-            scatter3(visible_pts(selector, 1), visible_pts(selector, 2), visible_pts(selector, 3), 3, 'r', 'fill')
-            hold on
-            draw_cubic_shape_frame(cuboid)
-            hold on
-            scatter3(gt_pts(:,1), gt_pts(:,2), gt_pts(:,3), 3, 'g', 'fill')
-            axis equal
-            %}
+            
+            % figure(1)
+            % clf;
+            % scatter3(gt_pts_transmitted(:,1),gt_pts_transmitted(:,2),gt_pts_transmitted(:,3),3,'r','fill')
+            % hold on
+            % axis equal
+            % figure(2)
+            % clf
+            % selector = (visible_pts(:, 6) == i);
+            % scatter3(visible_pts(selector, 1), visible_pts(selector, 2), visible_pts(selector, 3), 3, 'r', 'fill')
+            % hold on
+            % draw_cubic_shape_frame(cuboid)
+            % hold on
+            % scatter3(gt_pts(:,1), gt_pts(:,2), gt_pts(:,3), 3, 'g', 'fill')
+            % axis equal
+            
         end
     end
-    %{
-    for i = 1 : size(visible_pts, 1)
-        if correspondence(i) == 0
-            continue;
-        end
-        figure(1)
-        clf
-        % color = rand([size(visible_pts, 1) 3]); selector = (correspondence ~= 0);
-        draw_cubic_shape_frame(cuboid)
-        hold on
-        scatter3(visible_pts(:,1),visible_pts(:,2),visible_pts(:,3),5,'g','fill')
-        % scatter3(visible_pts(selector,1),visible_pts(selector,2),visible_pts(selector,3),5,color(selector, :),'fill')
-        hold on
-        scatter3(gt_pts(:,1),gt_pts(:,2),gt_pts(:,3),5,'b','fill')
-        hold on
-        scatter3(visible_pts(i,1),visible_pts(i,2),visible_pts(i,3),10,'r','fill')
-        hold on
-        scatter3(gt_pts(correspondence(i),1),gt_pts(correspondence(i),2),gt_pts(correspondence(i),3),10,'r','fill')
-        % scatter3(gt_pts(correspondence(selector),1),gt_pts(correspondence(selector),2),gt_pts(correspondence(selector),3),5,color(selector, :),'fill')
-        pause()
-    end
-    %}
-    %{
-    figure(1)
-    clf
-    selector = (correspondence ~= 0);
-    draw_cubic_shape_frame(cuboid)
-    % hold on
-    % scatter3(visible_pts(:,1),visible_pts(:,2),visible_pts(:,3),5,'g','fill')
-    hold on
-    scatter3(gt_pts(:,1),gt_pts(:,2),gt_pts(:,3),5,'b','fill')
-    hold on
-    scatter3(visible_pts(selector,1),visible_pts(selector,2),visible_pts(selector,3),10,'r','fill')
-    hold on
-    scatter3(gt_pts(correspondence(selector),1),gt_pts(correspondence(selector),2),gt_pts(correspondence(selector),3),10,'r','fill')
-    axis equal
-    %}
 end

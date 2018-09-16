@@ -173,14 +173,14 @@ function fin_param = analytical_gradient_v2(cuboid, P, T, visible_pt_3d, depth_m
     estimated_depth_ = @(pt_affine_3d) M(3, :) * pt_affine_3d';
     diff_ = @(pt_affine_3d, gt) gt - estimated_depth_(pt_affine_3d);
     
-    diff_record = zeros(100, 1);
+    diff_record = zeros(100, 1); depth_cpy = depth_map;
     
     gt_record = zeros(length(k1), 1);
     for i = 1 : length(k1)
         try
             pt_affine_3d = gt_pt_3d(i, :);
             px = px_(pt_affine_3d); py = py_(pt_affine_3d);
-            gt_record(i) = depth_map(py, px); 
+            gt_record(i) = depth_map(py, px);
         catch
             if px <= 0
                 px = 1;
@@ -205,7 +205,8 @@ function fin_param = analytical_gradient_v2(cuboid, P, T, visible_pt_3d, depth_m
             plane_ind = visible_pt_3d(i, 6);
             % Calculate Diff_val
             pt_affine_3d = [pts_3d{plane_ind}(theta, xc, yc, l, w, h, k1(i), k2(i)); 1]';
-            pt_affine_3d_record(i, :) = pt_affine_3d(1:3);
+            pt_affine_3d_record(i, :) = pt_affine_3d(1:3); % px = px_(pt_affine_3d); py = py_(pt_affine_3d);
+            % depth_cpy(py, px) = 40;
             try
                 diff = diff_(pt_affine_3d, gt_record(i)); 
                 tot_diff_record = tot_diff_record + diff^2;
@@ -237,8 +238,12 @@ function fin_param = analytical_gradient_v2(cuboid, P, T, visible_pt_3d, depth_m
         scatter3(pt_affine_3d_record(:,1),pt_affine_3d_record(:,2),pt_affine_3d_record(:,3),9,'r','fill')
         hold on
         scatter3(to_plot(:,1), to_plot(:,2), to_plot(:,3), 3, 'k', 'fill')
-        axis equal
+        axis equal; view(-46.3, 23.6)
         %}
+        % F = getframe(gcf);
+        % [X, Map] = frame2im(F);
+        % imwrite(X, ['/home/ray/Desktop/exp_new/' num2str(it_num) '.png'])
+
         delta = (hessian + eye(size(hessian,1))) \ first_order;
         cur_params = [theta xc yc l w 0]; cur_params(activation_label) = cur_params(activation_label) + delta' .* gamma(activation_label);
         theta = cur_params(1); xc = cur_params(2); yc = cur_params(3); l = cur_params(4); w = cur_params(5);

@@ -2558,3 +2558,236 @@ function ave_diff = calculate_depth_diff(depth_map, pts_cubic, extrinsic_params,
     show_depth_map(depth_map_copy);
     %}
 end
+% xmin = min(pts_3d_new(:,1)); xmax = max(pts_3d_new(:,1)); ymin = min(pts_3d_new(:,2)); ymax = max(pts_3d_new(:,2));
+% rangex = xmax - xmin; rangey = ymax - ymin;
+% pixel_coordinate_x = (pts_3d_new(:,1) - xmin) / (rangex / (image_size(1) - 1)); pixel_coordinate_x = round(pixel_coordinate_x) + 1;
+% pixel_coordinate_y = (pts_3d_new(:,2) - ymin) / (rangey / (image_size(2) - 1)); pixel_coordinate_y = round(pixel_coordinate_y) + 1;
+% bimg_linear_ind = sub2ind(image_size, pixel_coordinate_y, pixel_coordinate_x);
+
+
+
+% Edited on 09/13/18
+%{
+function test_ana_sol_for_affine()
+    q = rand(3,10); deg = rand(1, 3) * pi;
+    n = 3; m = size(p, 2);
+    R_ = @(theta1, theta2, theta3)[1 0 0; 0 cos(theta1) -sin(theta1); 0 sin(theta1) cos(theta1)] * ...
+        [cos(theta2) 0 sin(theta2); 0 1 0; -sin(theta2) 0 cos(theta2)] * ...
+        [cos(theta3) -sin(theta3) 0; sin(theta3) cos(theta3) 0; 0 0 1];
+    R = R_(deg(1),deg(2),deg(3)); T = rand(3,1); p = R * q + T; 
+    [R_, T_] = ana_sol_for_affine(p, q)
+end
+%}
+function [R_, T_] = ana_sol_for_affine(p, q)
+    % each point is a column vector in p and q
+    q = [q;ones(1,size(q,2))]; Q_ = zeros(n+1, n+1);
+    for i = 1 : m
+        q_ =  q(:, i);
+        Q_ = Q_ + q_ * q_';
+    end
+    c_ = p * q'; A = inv(Q_) * c_'; A = A'; R_ = A(1:3,1:3); T_ = A(:,4);
+    %{
+    c_ = zeros(n, n + 1); % c_ = p * q';
+    for j = 1 : n
+        for k = 1 : n + 1
+            c_(j,k) = q(k,:) * p(j,:)';
+        end
+    end
+    %}
+    %{
+    A = zeros(0);
+    for i = 1 : n
+        A = [A inv(Q_)*c_(i,:)'];
+    end
+    %}
+    % A = A'; R_ = A(1:3,1:3); T_ = A(:,4);
+end
+function [objs, prev_storage, instance_num] = seg_image(depth_map, label, instance, prev_storage, extrinsic_params, intrinsic_params, affine_matrx, instance_num, frame)
+    load('adjust_matrix.mat'); 
+    if frame > 1 
+        align_matrix = reshape(param_record(frame - 1)); 
+    end
+    building_type = 2;
+    max_depth = max(max(depth_map));
+    min_obj_pixel_num = [inf, 800, inf, inf, inf, 70, 10, 10, inf, 10, 10, inf, inf, inf, inf];
+    min_obj_height = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    max_obj_height = [inf, inf, inf, inf, inf, 0.10, 0.42, inf, inf, inf, inf, inf, inf, inf, inf];
+    image_size = [600 600]; SE = strel('square',1);
+    
+    [ix, iy] = find(label == building_type); linear_ind_record = sub2ind(size(depth_map), ix, iy);
+    pts_3d_old = get_3d_pts(depth_map, extrinsic_params, intrinsic_params, linear_ind_record);
+    pts_3d_new = (affine_matrx * (pts_3d_old)')'; bimg = false(image_size);
+    if isempty(prev_storage)
+        bimg_linear_ind = ind2d(pts_3d_new(:, 1:2), image_size); bimg(bimg_linear_ind) = true; J = imdilate(bimg,SE); J = imerode(J,SE);
+        CC = bwconncomp(J); objs = cell(CC.NumObjects, 1); obj_num_count = 1;
+        for i = 1 : CC.NumObjects
+            img_ind = CC.PixelIdxList{i}; cur_indices = zeros(0);
+            for j = 1 : length(img_ind)
+                cur_indices = [cur_indices; find(bimg_linear_ind == img_ind(j))];
+            end
+            if length(cur_indices) > min_obj_pixel_num(building_type)
+                cur_linear_ind = linear_ind_record(cur_indices);
+                objs{obj_num_count, 1} = init_single_obj(depth_map, cur_linear_ind, extrinsic_params, intrinsic_params, building_type, instance_num, frame);
+                obj_num_count = obj_num_count + 1; instance_num = instance_num + 1;
+            end
+        end
+    else
+        instance_num = prev_storage.instance_num + 1; pre_old_pts_all = zeros(0);
+        prev_objs = prev_storage.objs; pre_new_pts = zeros(0); instance_ind_mark = zeros(0);
+        for i = 1 : length(prev_objs)
+            frame_ind = prev_objs{i}.frames(end);
+            prev_old_pts = prev_objs{i}.old_pts{frame_ind};
+            pre_old_pts_all = [pre_old_pts_all; prev_old_pts];
+        end
+        for i = 1 : length(prev_objs)
+            frame_ind = prev_objs{i}.frames(end);
+            prev_old_pts = prev_objs{i}.old_pts{frame_ind};
+            pre_new_pts = [pre_new_pts; (affine_matrx * prev_old_pts')']; 
+            instance_ind_mark = [instance_ind_mark; ones(size(prev_old_pts, 1), 1) * prev_objs{i}.instance];
+        end
+        tot_new_pts = [pre_new_pts; pts_3d_new]; % instance_ind_mark = [instance_ind_mark zeros(size(pts_3d_new, 1), 1)];
+        bimg_linear_ind = ind2d(tot_new_pts(:, 1:2), image_size);
+        prev_bimg_linear_ind = bimg_linear_ind(1 : size(pre_new_pts, 1)); [unique_2d_ind, ia] = unique(prev_bimg_linear_ind); unique_instance_ind = instance_ind_mark(ia);
+        cur_bimg_linear_ind = bimg_linear_ind(size(pre_new_pts, 1) + 1 : end);
+        bimg(cur_bimg_linear_ind) = true; J = imdilate(bimg,SE); J = imerode(J,SE);
+        CC = bwconncomp(J); objs = cell(CC.NumObjects, 1); obj_num_count = 1;
+        map_ind = 1 : length(prev_objs);
+        for i = 1 : CC.NumObjects
+            img_ind = CC.PixelIdxList{i}; cur_indices = zeros(0);
+            for j = 1 : length(img_ind)
+                cur_indices = [cur_indices; find(cur_bimg_linear_ind == img_ind(j))];
+            end
+            if length(cur_indices) > min_obj_pixel_num(building_type)
+                % unique_img_ind = unique(img_ind);
+                [Lia, Locb] = ismember(img_ind, unique_2d_ind);
+                % cur_linear_ind = tot_linear_ind(cur_indices); unique_cur_indices = unique(cur_indices);
+                % [Lia, Locb] = ismember(unique_cur_indices, unique_2d_ind);
+                cur_linear_ind = linear_ind_record(cur_indices);
+                inited_obj = init_single_obj(depth_map, cur_linear_ind, extrinsic_params, intrinsic_params, building_type, instance_num, frame);
+                obj_num_count = obj_num_count + 1; instance_num = instance_num + 1;
+                if sum(Locb) > 0
+                    to_merge = unique(unique_instance_ind(Locb~=0));
+                    mapped_to_merge = map_ind(to_merge);
+                    prev_objs = merge_obj(inited_obj, prev_objs, mapped_to_merge);
+                    map_ind(to_merge) = length(prev_objs);
+                    % figure(1); clf;
+                    % draw_objs(prev_objs(unique(mapped_to_merge)))
+                    % hold on; draw_objs({inited_obj})
+                    a = 1;
+                else
+                    prev_objs{end + 1} = inited_obj;
+                end
+            end
+        end
+        objs = prev_objs;
+    end
+    indices = find(~cellfun('isempty', objs)); objs = objs(indices);
+    prev_storage.objs = objs; prev_storage.instance_num = instance_num;
+end
+
+function [affine_matrx, mean_error] = estimate_ground_plane(frame)
+    % Road  3
+    % frame = 2;
+    base_path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/'; % base file path
+    GT_Depth_path = 'Depth/Stereo_Left/Omni_F/'; % depth file path
+    GT_seg_path = 'GT/LABELS/Stereo_Left/Omni_F/'; % Segmentation mark path
+    GT_RGB_path = 'RGB/Stereo_Left/Omni_F/';
+    cam_para_path = 'CameraParams/Stereo_Left/Omni_F/';
+    
+    focal = 532.7403520000000; cx = 640; cy = 380; % baseline = 0.8;
+    intrinsic_params = [focal, 0, cx; 0, focal, cy; 0, 0, 1]; intrinsic_params(4,4) = 1;
+    
+    n = 294;
+    
+    f = num2str(frame, '%06d');
+    
+    % Get Camera parameter
+    txtPath = strcat(base_path, cam_para_path, num2str((frame-1), '%06d'), '.txt');
+    vec = load(txtPath);
+    extrinsic_params = reshape(vec, 4, 4);
+    
+    % Get Depth groundtruth
+    ImagePath = strcat(base_path, GT_Depth_path, f, '.png');
+    depth = getDepth(ImagePath);
+    
+    % Get segmentation mark groudtruth (Instance id looks broken)
+    ImagePath = strcat(base_path, GT_seg_path, f, '.png');
+    [label, ~] = getIDs(ImagePath);
+    
+    
+    [road_ix, road_iy] = find(label == 3);
+    linear_ind = sub2ind(size(label), road_ix, road_iy);
+    
+    reconstructed_3d = get_3d_pts(depth, extrinsic_params, intrinsic_params, linear_ind);
+    [affine_matrx, mean_error] = estimate_origin_ground_plane(reconstructed_3d);
+    
+    % Check:
+    % img = imread(strcat(base_path, GT_RGB_path, num2str((frame-1), '%06d'), '.png'));
+end
+function [affine_matrx, mean_error] = estimate_origin_ground_plane(pts)
+    mean_pts = mean(pts);
+    sum_mean_xy = sum((pts(:,1) - mean_pts(1)) .* (pts(:,2) - mean_pts(2)));
+    sum_mean_x2 = sum((pts(:,1) - mean_pts(1)).^2);
+    sum_mean_y2 = sum((pts(:,2) - mean_pts(2)).^2);
+    sum_mean_xz = sum((pts(:,1) - mean_pts(1)) .* (pts(:,3) - mean_pts(3)));
+    sum_mean_yz = sum((pts(:,2) - mean_pts(2)) .* (pts(:,3) - mean_pts(3)));    
+    M = [sum_mean_x2 sum_mean_xy; sum_mean_xy sum_mean_y2];
+    N = [sum_mean_xz; sum_mean_yz];
+    param_intermediate = inv(M) * N;
+    A = param_intermediate(1); B = param_intermediate(2);
+    param = [A, B, -1, -A*mean_pts(1)-B*mean_pts(2)+mean_pts(3)];
+    affine_matrx = get_affine_transformation_from_plane(param, pts);
+    mean_error = sum((param * pts').^2) / size(pts, 1);
+end
+
+function reconstructed_3d = get_3d_pts(depth_map, extrinsic_params, intrinsic_params, valuable_ind)
+    height = size(depth_map, 1);
+    width = size(depth_map, 2);
+    x = 1 : height; y = 1 : width;
+    [X, Y] = meshgrid(y, x);
+    pts = [Y(:) X(:)];
+    projects_pts = [pts(valuable_ind,2) .* depth_map(valuable_ind), pts(valuable_ind,1) .* depth_map(valuable_ind), depth_map(valuable_ind), ones(length(valuable_ind), 1)];
+    reconstructed_3d = (inv(intrinsic_params * extrinsic_params) * projects_pts')';
+end
+function affine_transformation = get_affine_transformation_from_plane(param, pts)
+    origin = mean(pts); origin = origin(1:3);
+    dir1 = (rand_sample_pt_on_plane(param, true) - rand_sample_pt_on_plane(param, false)); dir1 = dir1 / norm(dir1);
+    dir3 = param(1:3); dir3 = dir3 / norm(dir3);
+    dir2 = cross(dir1, dir3); dir2 = dir2 / norm(dir2);
+    dir =[dir1;dir2;dir3];
+    affine_transformation = get_affine_transformation(origin, dir);
+end
+function pt = rand_sample_pt_on_plane(param, istrue)
+    if istrue
+        pt = [0.2946 -3.0689];
+    else
+        pt = [0.9895 -1.8929];
+    end
+    %pt = randn([1 2]); 
+    pt = [pt, - (param(1) * pt(1) + param(2) * pt(2) + param(4)) / param(3)];
+end
+
+function affine_transformation = get_affine_transformation(origin, new_basis)
+    pt_camera_origin_3d = origin;
+    x_dir = new_basis(1, :);
+    y_dir = new_basis(2, :);
+    z_dir = new_basis(3, :);
+    new_coord1 = [1 0 0];
+    new_coord2 = [0 1 0];
+    new_coord3 = [0 0 1];
+    new_pts = [new_coord1; new_coord2; new_coord3];
+    old_Coord1 = pt_camera_origin_3d + x_dir;
+    old_Coord2 = pt_camera_origin_3d + y_dir;
+    old_Coord3 = pt_camera_origin_3d + z_dir;
+    old_pts = [old_Coord1; old_Coord2; old_Coord3];
+    
+    T_m = new_pts' * inv((old_pts - repmat(pt_camera_origin_3d, [3 1]))');
+    transition_matrix = eye(4,4);
+    transition_matrix(1:3, 1:3) = T_m;
+    transition_matrix(1, 4) = -pt_camera_origin_3d * x_dir';
+    transition_matrix(2, 4) = -pt_camera_origin_3d * y_dir';
+    transition_matrix(3, 4) = -pt_camera_origin_3d * z_dir';
+    affine_transformation = transition_matrix;
+    % Check: 
+    % (affine_transformation * [old_pts ones(3,1)]')'
+end

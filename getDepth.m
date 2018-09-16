@@ -10,5 +10,5 @@ im = imread(ImagePath);
 % depth = ((r) + (g * 256) + (b * 256*256)) / ((256*256*256) - 1) * f
 
 % depthMatrix = (sum(im,3)) / 1000;
-depthMatrix = double(im(:, :, 1)) / 1000;
+depthMatrix = double(im(:, :, 1)) / 100;
 end

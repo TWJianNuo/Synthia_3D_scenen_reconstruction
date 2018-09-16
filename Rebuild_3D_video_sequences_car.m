@@ -30,7 +30,7 @@ function env_set()
     
     n = 294; tot_obj_dist = 0; tot_obj_diff = 0; tot_dist = 0; tot_diff = 0;
     
-    for frame = 1 : n
+    for frame = 1 : 1
         affine_matrx = Estimate_ground_plane(frame); save('affine_matrix.mat', 'affine_matrx');
         f = num2str(frame, '%06d');
         
@@ -70,7 +70,7 @@ function env_set()
         path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Matlab_code/Synthia_3D_scenen_reconstruction/exp_re/metric.txt';
         save_to_text(objs, frame, path);
         save_img(img, frame)
-        disp(['Frame ' num2str(frame) ' Finished\n'])
+        disp(['Frame ' num2str(frame) ' Finished/n'])
         % figure(1)
         % clf
         % imshow(img)
@@ -140,15 +140,18 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
         hessian = zeros(activated_params_num, activated_params_num); first_order = zeros(activated_params_num, 1);
         [hessian, first_order] = analytical_gradient(objs{index}.cur_cuboid, intrinsic_params, extrinsic_params, visible_pt_3d, objs{index}.depth_map, hessian, first_order, cur_activation_label);
         
-        %{
+        
         figure(1)
         clf
         scatter3(visible_pt_3d(:,1), visible_pt_3d(:,2), visible_pt_3d(:,3), 3, 'r', 'fill');
         hold on
-        draw_cuboid(cubics{index});
+        draw_cubic_shape_frame(cubics{index});
         hold on
-        scatter3(objs{index}.new_pts(:,1), objs{index}.new_pts(:,2), objs{index}.new_pts(:,3), 3, 'g', 'fill')
-        %}
+        scatter3(objs{index}.new_pts(:,1), objs{index}.new_pts(:,2), objs{index}.new_pts(:,3), 3, 'k', 'fill')
+        axis equal; view(-46.3, 23.6)
+        % F = getframe(gcf);
+        % [X, Map] = frame2im(F);
+        % imwrite(X, ['/home/ray/Desktop/exp_new/' num2str(it_count) '.png'])
         
         [delta, terminate_flag_singular] = calculate_delta(hessian, first_order); [params_cuboid_order, terminate_flag] = update_params(objs{index}.guess, delta, gamma, cur_activation_label, terminate_ratio);
         objs{index}.guess(1:6) = params_cuboid_order;
@@ -156,9 +159,9 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
         objs{index}.cur_cuboid = generate_cuboid_by_center(cx, cy, theta, l, w, h);
         ave_dist = calculate_ave_distance(objs{index}.cur_cuboid, objs{index}.new_pts); tot_dist_record(it_count + 1) = ave_dist; tot_params_record(it_count + 1, :) = objs{index}.guess;
         
-        if max(abs(delta)) < delta_threshold || it_count >= max_it_num || terminate_flag || terminate_flag_singular || (tot_dist_record(it_count + 1) / min(tot_dist_record(1:(it_count + 1)))) > distortion_terminate_ratio
-            is_terminated = true;
-        end
+        % if max(abs(delta)) < delta_threshold || it_count >= max_it_num || terminate_flag || terminate_flag_singular || (tot_dist_record(it_count + 1) / min(tot_dist_record(1:(it_count + 1)))) > distortion_terminate_ratio
+        %     is_terminated = true;
+        % end
     end
     objs = find_best_fit_cubic(objs, tot_dist_record, tot_params_record, index);
     %{
@@ -191,6 +194,7 @@ end
 function [delta, terminate_flag] = calculate_delta(hessian, first_order)
     lastwarn(''); % Empty existing warning
     delta = hessian \ first_order;
+    % delta = (hessian + eye(size(hessian,1))) \ first_order;
     [msgstr, msgid] = lastwarn;
     terminate_flag = false;
     if strcmp(msgstr,'矩阵为奇异工作精度。') && strcmp(msgid, 'MATLAB:singularMatrix')

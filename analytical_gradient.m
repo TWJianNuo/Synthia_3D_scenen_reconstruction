@@ -183,6 +183,7 @@ function [hessian, first_order, tot_diff_record] = analytical_gradient(cuboid, P
     
     tot_diff_record = 0;
     for i = 1 : length(k1)
+    % for i = 1 : 1
         plane_ind = visible_pt_3d(i, 6);
         
         % Calculate Diff_val

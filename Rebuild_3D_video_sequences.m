@@ -107,6 +107,7 @@ function objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_pa
         hessian = zeros(activated_params_num, activated_params_num); first_order = zeros(activated_params_num, 1);
         [hessian, first_order] = analytical_gradient(objs{index}.cur_cuboid, intrinsic_params, extrinsic_params, visible_pt_3d, objs{index}.depth_map, hessian, first_order, cur_activation_label);
         
+        % [pts_estimated_2d, pts_estimated_vlaid, ~, depth] = projectPoints(cur_pts, intrinsic_params(1:3, 1:3), extrinsic_params, [0,0,0,0,0], [image_size(1) image_size(2)], false);
         
         figure(1)
         clf

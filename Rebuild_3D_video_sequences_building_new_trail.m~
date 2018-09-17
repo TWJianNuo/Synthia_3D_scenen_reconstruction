@@ -1,29 +1,92 @@
+env_set()
 % Step1: align to a common place
 % Step2: do cubic shape initial guess on multiple frames data
-% Step3: do cubic shape estimation on multiple level, basde on multiple frame and different extrinsic and intrinisic data type
+% Step3: do cubic shape estimation on multiple level, basde on multiple
+% frame and different extrinsic and intrinisic data type
 % Step4: Get an instance-level basde object guess.
-% Step5: cast the object into the image if that instance existing in that frame
-[base_path, GT_Depth_path, GT_seg_path, GT_RGB_path, GT_Color_Label_path, cam_para_path] = get_file_storage_path();
-intrinsic_params = get_intrinsic_matrix();
-n = 294; tot_obj_dist = 0; tot_obj_diff = 0; tot_dist = 0; tot_diff = 0; mean_error_th = 1e-3;
-for frame = 1 : n
-    [extrinsic_params, depth, label, building_instance, rgb] = grab_provided_data(frame);
-    [affine_matrx, ~] = Estimate_ground_plane(frame);
+% Step5: cast the object into the image if that instance existing in that
+% frame
+function env_set()
+    base_path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/'; % base file path
+    GT_Depth_path = 'Depth/Stereo_Left/Omni_F/'; % depth file path
+    GT_seg_path = 'GT/LABELS/Stereo_Left/Omni_F/'; % Segmentation mark path
+    GT_RGB_path = 'RGB/Stereo_Left/Omni_F/';
+    GT_Color_Label_path = 'GT/COLOR/Stereo_Left/Omni_F/';
+    cam_para_path = 'CameraParams/Stereo_Left/Omni_F/';
     
-    objs = seg_image(depth, label, building_instance, extrinsic_params, intrinsic_params);
-    objs = get_init_guess(objs);
-end
-function get_waiting_list()
+    focal = 532.7403520000000; cx = 640; cy = 380; % baseline = 0.8;
+    intrinsic_params = [focal, 0, cx; 0, focal, cy; 0, 0, 1]; intrinsic_params(4,4) = 1;
     
+    n = 294; tot_obj_dist = 0; tot_obj_diff = 0; tot_dist = 0; tot_diff = 0; mean_error_th = 1e-3;
+    path1 = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/Car_reconstruction_results/metric.txt';
+    path2 = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/Car_reconstruction_results/is_frame_valid.txt';
+    path3 = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/Car_reconstruction_results/cubic_info.txt';
+    path4 = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/Car_reconstruction_results/camera_info.txt';
+    fileID1 = fopen(path1,'w'); fileID2 = fopen(path2,'w'); fileID3 = fopen(path3,'w'); fileID4 = fopen(path4,'w');
+    
+    for frame = 1 : n
+        % frame
+        [affine_matrx, mean_error] = Estimate_ground_plane(frame); save('affine_matrix.mat', 'affine_matrx');
+        if mean_error > mean_error_th
+            print_isvalid(frame, [fileID2 fileID4], zeros(0), zeros(0), zeros(0), false)
+            continue;
+        end
+        f = num2str(frame, '%06d');
+        
+        color_gt = imread(strcat(base_path, GT_Color_Label_path, num2str((frame-1), '%06d'), '.png'));
+        
+        % Get Camera parameter
+        txtPath = strcat(base_path, cam_para_path, num2str((frame-1), '%06d'), '.txt');
+        vec = load(txtPath);
+        extrinsic_params = reshape(vec, 4, 4);
+        
+        % Get Depth groundtruth
+        ImagePath = strcat(base_path, GT_Depth_path, f, '.png');
+        depth = getDepth(ImagePath);
+        
+        % Get segmentation mark groudtruth (Instance id looks broken)
+        ImagePath = strcat(base_path, GT_seg_path, f, '.png');
+        [label, instance] = getIDs(ImagePath);
+        
+        ImagePath = strcat(base_path, GT_RGB_path, f, '.png');
+        img = imread(ImagePath);
+        
+        % get_all_3d_pt(depth, extrinsic_params, intrinsic_params, label);
+        objs = seg_image(depth, label, instance, extrinsic_params, intrinsic_params);
+        % draw_segmented_objs(objs, img)
+        objs = get_init_guess(objs);
+        for i = 1 : length(objs)
+            objs = estimate_single_cubic_shape(objs, extrinsic_params, intrinsic_params, i, depth);
+        end
+        % draw_scene(objs, 1, color_gt);
+        for i = 1 : length(objs)
+            if ~isnan(objs{i}.metric(2)) tot_dist = tot_dist + objs{i}.metric(2); tot_obj_dist = tot_obj_dist + 1; end
+            if ~isnan(objs{i}.metric(1)) tot_diff = tot_diff + objs{i}.metric(1); tot_obj_diff = tot_obj_diff + 1; end
+            img = cubic_lines_of_2d(img, objs{i}.cur_cuboid, objs{i}.intrinsic_params, objs{i}.extrinsic_params);
+        end
+        print_error_info(objs, frame, fileID1);
+        print_isvalid(frame, [fileID2 fileID4], intrinsic_params, extrinsic_params, affine_matrx, true)
+        print_cubic_info(fileID3, objs, frame)
+        save_img(img, frame)
+        save_img(img, frame)
+        disp(['Frame ' num2str(frame) ' Finished/n'])
+        % figure(1)
+        % clf
+        % imshow(img)
+        
+    end
+    ave_dist = tot_dist / tot_obj_dist; ave_diff = tot_diff / tot_obj_diff;
+    save_mean_to_text(ave_dist, ave_diff, fileID1)
+    fclose(fileID1); fclose(fileID2); fclose(fileID3); fclose(fileID4);
+    % Check:
+    % mean_error = check_projection(objs, extrinsic_params,
+    % intrinsic_params);
+    % img = imread(strcat(base_path, GT_RGB_path, num2str((frame-1), '%06d'), '.png'));
 end
-function [extrinsic_params, depth, label, building_instance, rgb] = grab_provided_data(frame)
-    [base_path, GT_Depth_path, GT_seg_path, GT_RGB_path, GT_Color_Label_path, cam_para_path] = get_file_storage_path();
+function save_img(img, frame)
+    path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/SYNTHIA-SEQS-05-SPRING/Car_reconstruction_results/';
     f = num2str(frame, '%06d');
-    txtPath = strcat(base_path, cam_para_path, num2str((frame-1), '%06d'), '.txt'); vec = load(txtPath); extrinsic_params = reshape(vec, 4, 4);
-    ImagePath = strcat(base_path, GT_Depth_path, f, '.png'); depth = getDepth(ImagePath);
-    ImagePath = strcat(base_path, GT_seg_path, f, '.png'); [label, ~] = getIDs(ImagePath);
-    ImagePath = strcat(base_path, GT_RGB_path, f, '.png'); rgb = imread(ImagePath);
-    ImagePath = strcat(base_path, GT_Color_Label_path, f, '.png'); building_instance = imread(ImagePath);
+    imwrite(img, [path f '.png']);
 end
 function print_cubic_info(file_id, objs, frame_id)
     fprintf(file_id, '%d\t%d\n', frame_id, length(objs));

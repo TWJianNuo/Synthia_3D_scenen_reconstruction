@@ -5,26 +5,46 @@
 % Step5: cast the object into the image if that instance existing in that frame
 [base_path, GT_Depth_path, GT_seg_path, GT_RGB_path, GT_Color_Label_path, cam_para_path] = get_file_storage_path();
 intrinsic_params = get_intrinsic_matrix();
-n = 294; tot_obj_dist = 0; tot_obj_diff = 0; tot_dist = 0; tot_diff = 0; mean_error_th = 1e-3;
+n = 294; tot_obj_dist = 0; tot_obj_diff = 0; tot_dist = 0; tot_diff = 0; mean_error_th = 1e-3; exp_re_path = make_dir();
 for frame = 1 : n
-    [extrinsic_params, depth, label, building_instance, rgb] = grab_provided_data(frame);
-    [affine_matrx, ~] = Estimate_ground_plane(frame);
+    [extrinsic_params, depth, label, building_instance, rgb, instance_frame] = grab_provided_data(frame);
+    % [affine_matrx, ~] = Estimate_ground_plane(frame);
     
-    objs = seg_image(depth, label, building_instance, extrinsic_params, intrinsic_params);
-    objs = get_init_guess(objs);
+    % objs = seg_image(depth, label, building_instance, extrinsic_params, intrinsic_params);
+    % instance_data = get_instance_label(frame);
+    rectangulars = get_init_guess(instance_frame);
+    rgb = render_image(rgb, rectangulars); save_results(rgb, exp_re_path, frame);
 end
-function get_waiting_list()
-    
+function save_results(image, folder_path, frame)
+    save_path = [folder_path '/' num2str(frame, '%06d') '.png'];
+    imwrite(image, save_path);
 end
-function [extrinsic_params, depth, label, building_instance, rgb] = grab_provided_data(frame)
-    [base_path, GT_Depth_path, GT_seg_path, GT_RGB_path, GT_Color_Label_path, cam_para_path] = get_file_storage_path();
+function img = render_image(img, rectangulars)
+    for i = 1 : length(rectangulars)
+        intrinsic_params = rectangulars{i}.intrinsic_params;
+        extrinsic_params = rectangulars{i}.extrinsic_params * inv(rectangulars{i}.affine_matrx);
+        color = rectangulars{i}.color;
+        img = cubic_lines_of_2d(img, rectangulars{i}.cur_cuboid, intrinsic_params, extrinsic_params, color, rectangulars{i}.instanceId);
+    end
+end
+function [extrinsic_params, depth, label, instance, rgb, instance_frame] = grab_provided_data(frame)
+    [base_path, GT_Depth_path, GT_seg_path, GT_RGB_path, ~, cam_para_path] = get_file_storage_path();
+    folder_path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/segmentation_results/21_Sep_2018_07_segmentation/Instance_map/';
     f = num2str(frame, '%06d');
     txtPath = strcat(base_path, cam_para_path, num2str((frame-1), '%06d'), '.txt'); vec = load(txtPath); extrinsic_params = reshape(vec, 4, 4);
     ImagePath = strcat(base_path, GT_Depth_path, f, '.png'); depth = getDepth(ImagePath);
-    ImagePath = strcat(base_path, GT_seg_path, f, '.png'); [label, ~] = getIDs(ImagePath);
+    ImagePath = strcat(base_path, GT_seg_path, f, '.png'); [label, instance] = getIDs(ImagePath);
     ImagePath = strcat(base_path, GT_RGB_path, f, '.png'); rgb = imread(ImagePath);
-    ImagePath = strcat(base_path, GT_Color_Label_path, f, '.png'); building_instance = imread(ImagePath);
+    instance_map = load([folder_path f '.mat']); instance_frame = instance_map.prev_mark;
 end
+function path = make_dir()
+    father_folder = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/static_obj_label/';
+    DateString = datestr(datetime('now'));
+    DateString = strrep(DateString,'-','_');DateString = strrep(DateString,' ','_');DateString = strrep(DateString,':','_'); DateString = DateString(1:14);
+    path = [father_folder DateString];
+    mkdir(path);
+end
+
 function print_cubic_info(file_id, objs, frame_id)
     fprintf(file_id, '%d\t%d\n', frame_id, length(objs));
     for i = 1 : length(objs)
@@ -205,11 +225,21 @@ function cubics = distill_all_eisting_cubic_shapes(objs)
         cubics{i} = objs{i}.cur_cuboid;
     end
 end
-function objs = get_init_guess(objs)
+function rectangulars = get_init_guess(objs)
+    % figure(1); clf;
+    rectangulars = cell(length(objs), 1);
     for i = 1 : length(objs)
-        [params, cuboid] = estimate_rectangular(objs{i}.new_pts);
-        objs{i}.guess = params;
-        objs{i}.cur_cuboid = cuboid;
+        pts = objs{i}.pts_new;
+        [params, cuboid] = estimate_rectangular(pts);
+        rectangulars{i}.guess = params;
+        rectangulars{i}.cur_cuboid = cuboid;
+        rectangulars{i}.extrinsic_params = objs{i}.extrinsic_params;
+        rectangulars{i}.intrinsic_params = objs{i}.intrinsic_params;
+        rectangulars{i}.affine_matrx = objs{i}.affine_matrx;
+        rectangulars{i}.color = objs{i}.color;
+        rectangulars{i}.instanceId = objs{i}.instanceId;
+        % scatter3(pts(:, 1), pts(:, 2), pts(:, 3), 3, 'r', 'fill');
+        % hold on; draw_cubic_shape_frame(rectangulars{i}.cur_cuboid); hold on
     end
 end
 function objs = seg_image(depth_map, label, instance, extrinsic_params, intrinsic_params)
@@ -322,7 +352,7 @@ function obj = init_single_obj(depth_map, linear_ind, extrinsic_params, intrinsi
     obj = struct;
     obj.instance = instance_id;
     obj.type = type;
-    
+    seg_image
     obj.linear_ind = linear_ind;
     obj.depth_map = ones(size(depth_map)) * max_depth;
     obj.depth_map(obj.linear_ind) = depth_map(obj.linear_ind);
@@ -393,10 +423,10 @@ function activation_label = cancel_co_activation_label(activation_label)
         end
     end
 end
-function img = cubic_lines_of_2d(img, cubic, intrinsic_params, extrinsic_params)
+function img = cubic_lines_of_2d(img, cubic, intrinsic_params, extrinsic_params, color, instance_id)
     % color = uint8(randi([1 255], [1 3])); 
     % color = rand([1 3]);
-    shapeInserter = vision.ShapeInserter('Shape', 'Lines', 'BorderColor', 'White');
+    % shapeInserter = vision.ShapeInserter('Shape', 'Lines', 'BorderColor', color);
     pts3d = zeros(8,4);
     for i = 1 : 4
         pts3d(i, :) = [cubic{i}.pts(1, :) 1];
@@ -420,11 +450,12 @@ function img = cubic_lines_of_2d(img, cubic, intrinsic_params, extrinsic_params)
         lines(8 + i, :) = [pts2d(i + 4, :) pts2d(i + 5, :)];
     end
     for i = 1 : 12
-        img = step(shapeInserter, img, int32([lines(i, 1) lines(i, 2) lines(i, 3) lines(i, 4)]));
-        % figure(1)
-        % imshow(img)
+        % img = step(shapeInserter, img, int32([lines(i, 1) lines(i, 2) lines(i, 3) lines(i, 4)]));
+        img = insertShape(img,'Line', int32([lines(i, 1) lines(i, 2) lines(i, 3) lines(i, 4)]), 'LineWidth', 2, 'Color', ceil(color * 254));
         % pause()
     end
+    text_position_ind = find(sum(pts2d, 2) == min(sum(pts2d, 2))); str = ['ins: ' num2str(instance_id)];
+    img = insertText(img, pts2d(text_position_ind, :) - [20 10], str, 'FontSize', 10, 'BoxColor', ceil(color * 254),'BoxOpacity',0.4,'TextColor','white');
 end
 function correspondence = find_correspondence(cuboid, gt_pts, visible_pts, percentage, num1, num2)
     % figure(1)

@@ -1,42 +1,33 @@
-function [visible_pt_3d, visible_pt_2d, visible_depth] = find_visible_pt_global(objects, pts_2d, pts_3d, depth, cam_m, transition_m, cam_origin)
-    M = inv(cam_m * transition_m);
-    visible_pt = zeros(size(pts_2d, 1), 7);
-    deviation_threshhold = 0.00001;
-    valid_plane_num = 4;
-    num_obj = size(objects, 1);
-    for ii = 1 : size(pts_2d, 1)
+function visible_pt_label = find_visible_pt_global(cubics, pts_3d, intrinsic_params, extrinsic_params)
+    if size(pts_3d, 2) < 4
+        pts_3d = [pts_3d, ones(size(pts_3d, 1), 1)];
+    end
+    num_pt = size(pts_3d, 1); cam_origin = inv(extrinsic_params) * [0 0 0 1]';
+    M = inv(intrinsic_params * extrinsic_params); pts_2d = (intrinsic_params * extrinsic_params * pts_3d')'; pts_2d(:, 1) = pts_2d(:, 1) ./ pts_2d(:, 3); pts_2d(:, 2) = pts_2d(:, 2) ./ pts_2d(:, 3); pts_2d = pts_2d(:, 1:2);
+    visible_pt_label = false(num_pt, 1); deviation_threshhold = 0.00001; valid_plane_num = 4; num_obj = size(cubics, 1);
+    for ii = 1 : num_pt
         single_pt_all_possible_pos = zeros(valid_plane_num * num_obj, 4);
         valid_label = false(valid_plane_num * num_obj, 1);
         for k = 1 : num_obj
-            cuboid = objects{k};
+            cuboid = cubics{k};
             for i = 1 : valid_plane_num
                 params = cuboid{i}.params;
                 z = - params * M(:, 4) / (pts_2d(ii, 1) * params * M(:, 1) + pts_2d(ii, 2) * params * M(:, 2) + params * M(:, 3));
                 single_pt_all_possible_pos((k - 1) * valid_plane_num + i, :) = (M * [pts_2d(ii, 1) * z pts_2d(ii, 2) * z z 1]')';
             end
-            [valid_label((k-1) * valid_plane_num + 1 : k * valid_plane_num, :), ~] = judge_on_cuboid(cuboid, single_pt_all_possible_pos((k - 1) * valid_plane_num + 1 : k * valid_plane_num, :));
-            
+            [valid_label((k-1) * valid_plane_num + 1 : k * valid_plane_num, :), ~] = judge_on_cuboid(cuboid, single_pt_all_possible_pos((k - 1) * valid_plane_num + 1 : k * valid_plane_num, :)); 
         end
-        
         if length(single_pt_all_possible_pos(valid_label)) > 0
             vale_pts = single_pt_all_possible_pos(valid_label, :);
-            dist_to_origin = sum((vale_pts(:, 1:3) - cam_origin).^2, 2);
-            % dist_to_origin = (transition_m * [vale_pts(:, 1:3) ones(size(vale_pts, 1), 1)]')'; dist_to_origin = sum(dist_to_origin(:,1:3).^2, 2);
+            dist_to_origin = sum((vale_pts(:, 1:3) - cam_origin(1:3)').^2, 2);
             shortest_ind = find(dist_to_origin == min(dist_to_origin));
             shortest_ind = shortest_ind(1);
             if(sum((vale_pts(shortest_ind, 1:3) - pts_3d(ii, 1:3)).^2) < deviation_threshhold)
-                visible_pt(ii, 1:3) = vale_pts(shortest_ind, 1:3);
-                visible_pt(ii, 4:5) = pts_3d(ii, 5:6);
-                visible_pt(ii, 6) = pts_3d(ii, 4);
-                visible_pt(ii, 7) = 1;
+                visible_pt_label(ii) = true;
             end
         end
-        
     end
-    visible_label = visible_pt(:, 7) == 1;
-    visible_pt_3d = visible_pt(visible_label, 1:6);
-    visible_pt_2d = pts_2d(visible_label, 1:2);
-    visible_depth = depth(visible_label);
+    pts_2d = pts_2d(visible_pt_label, :);
 end
 
 function [valid_label, type] = judge_on_cuboid(cuboid, pts)

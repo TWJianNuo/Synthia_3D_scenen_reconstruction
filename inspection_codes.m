@@ -2869,3 +2869,34 @@ function [max_instance, prev_mark] = seg_image(depth_map, label, instance, prev_
     indices = find(~cellfun('isempty', cur_mark)); cur_mark = cur_mark(indices); 
     prev_mark = cur_mark; % plot_mark(cur_mark);
 end
+
+
+
+%{
+function int_val = get_interpolatied_value(image, loc)
+    % Image should be expanded image
+    loc_l = floor(loc); loc_h = ceil(loc);
+    x1 = loc_l(:,1); x2 = loc_h(:,1); y1 = loc_l(:,2); y2 = loc_h(:,2); x = loc(:,1); y = loc(:,2);
+    f11 = image(x1, y1); f12 = image(x1, y2);
+    f21 = image(x2, y1); f22 = image(x2, y2);
+    k = 1 ./ (x2 - x1) ./ (y2 - y1);
+    A = ((x2 - x) .* f11 + (x - x1) .* f21) .* (y2 - y);
+    B = ((x2 - x) .* f12 + (x - x2) .* f22) .* (y - y1);
+    int_val = (A + B) .* k;
+end
+%}
+function test_interpolation()
+    %{
+    img = imread('ngc6543a.jpg'); img = img(200:370,250:400,:); img = rgb2gray(img);
+    figure(1); clf; imshow(img);
+    randx = randi([1 size(img, 2) - 1] , 1) + 0.001; randy = randi([1 size(img, 1) - 1], 1) + 0.001;
+    x = floor(randx) : 0.01 : ceil(randx); y = ones(1, length(x)) * round(randy);
+    int_val = get_interpolatied_value(img, [x; y]);
+    val_left = image(round(randy), floor(randx)); val_right = image(round(randy), ceil(randx));
+    figure(1); clf; stem(val_left - int_val); figure(2); clf; stem(val_right - int_val);
+    %}
+    img = imread('ngc6543a.jpg'); img = img(200:370,250:400,:); img = rgb2gray(img);
+    figure(1); clf; imshow(img); size = size(img);
+    x = 2 : 0.01 : 3; y = ones(1, length(x)) * 5;
+    X = [2 2 3 3]; Y = [5 4 5 4];
+end

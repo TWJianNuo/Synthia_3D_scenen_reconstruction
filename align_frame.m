@@ -1,7 +1,8 @@
 run('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Matlab_code/Synthia_3D_scenen_reconstruction/vlfeat-0.9.21/toolbox/vl_setup')
 n = 294; error_record = zeros(n, 1); thold = 1e-5; % reconstructed_3d_pts_record = cell(n, 1); affine_matrix_record = cell(n, 1);
 exp_re_path = make_dir(); error_recorder1 = zeros(n-1,1); error_recorder2 = zeros(n-1,1); param_record = zeros(n-1, 16);
-for frame = 8 : n - 1
+% serial_record = zeros(n-1, 1);
+for frame = 1 : n - 1
     disp(['frame ' num2str(frame) ' finied\n'])
     % f1 = num2str(frame, '%06d'); f2 = num2str(frame + 1, '%06d');
     
@@ -23,34 +24,57 @@ for frame = 8 : n - 1
     cores_pts2 = get_3d_pts(depth2, extrinsic_params2, intrinsic_params2, correspondence(2,:));
     
     % [param, error] = RANSAC_estimation(cores_pts1, cores_pts2); error_recorder(frame) = error;
-    [param1, ~] = RANSAC_estimation(cores_pts1, cores_pts2);
-    [param2, ~] = RANSAC_estimation_2(cores_pts1, cores_pts2); % error_recorder(frame) = error;
+    params1 = RANSAC_estimation(cores_pts1, cores_pts2);
+    params2 = RANSAC_estimation_2(cores_pts1, cores_pts2, params1); % error_recorder(frame) = error;
     % figure(3); scatter3(cores_pts1(:,1),cores_pts1(:,2),cores_pts1(:,3),3,'r','fill'); hold on; scatter3(cores_pts2(:,1),cores_pts2(:,2),cores_pts2(:,3),3,'b','fill')
     
     all_pts1 = get_3d_pts(depth1, extrinsic_params1, intrinsic_params1, fin_ind1');
     all_pts2 = get_3d_pts(depth2, extrinsic_params2, intrinsic_params2, fin_ind2');
-    figure(1); clf; scatter3(all_pts1(:,1),all_pts1(:,2),all_pts1(:,3),3,'r','fill'); hold on; scatter3(all_pts2(:,1),all_pts2(:,2),all_pts2(:,3),3,'g','fill')
-    all_pts2_transformed1 = (param1 * all_pts2')'; all_pts2_transformed2 = (param2 * all_pts2')'; 
+    % figure(1); clf; scatter3(all_pts1(:,1),all_pts1(:,2),all_pts1(:,3),3,'r','fill'); hold on; scatter3(all_pts2(:,1),all_pts2(:,2),all_pts2(:,3),3,'g','fill')
+    % all_pts2_transformed1 = (params1 * all_pts2')'; all_pts2_transformed2 = (params2 * all_pts2')'; 
     % [projected_pts2, valid] = projectPoints(all_pts2_transformed, intrinsic_params1(1:3,1:3),extrinsic_params1,[0,0,0,0,0],size(depth1),false);
     % projected_pts2 = projected_pts2(valid, :); lin_ind = sub2ind(size(depth_map), projected_pts2(:,2), projected_pts2(:,1));
     
-    figure(1);clf;scatter3(all_pts1(:,1),all_pts1(:,2),all_pts1(:,3),3,'r','fill'); hold on;
-    scatter3(all_pts2_transformed1(:,1),all_pts2_transformed1(:,2),all_pts2_transformed1(:,3),3,'b','fill'); hold on; axis equal; [az,el] = view;
-    F = getframe(gcf); [X1, Map] = frame2im(F);
-    figure(2);clf;scatter3(all_pts1(:,1),all_pts1(:,2),all_pts1(:,3),3,'r','fill'); hold on;
-    scatter3(all_pts2_transformed2(:,1),all_pts2_transformed2(:,2),all_pts2_transformed2(:,3),3,'b','fill'); hold on; axis equal; view([az,el]);
-    F = getframe(gcf); [X2, Map] = frame2im(F); X2 = imresize(X2, [size(X1,1) size(X1,2)]);
-    X = [X1 X2]; imwrite(X, [exp_re_path '/3d_pts_' num2str(frame) '.png']);
+    % figure(1);clf;scatter3(all_pts1(:,1),all_pts1(:,2),all_pts1(:,3),3,'r','fill'); hold on;
+    % scatter3(all_pts2_transformed1(:,1),all_pts2_transformed1(:,2),all_pts2_transformed1(:,3),3,'b','fill'); hold on; axis equal; [az,el] = view;
+    % F = getframe(gcf); [X1, Map] = frame2im(F);
+    % figure(2);clf;scatter3(all_pts1(:,1),all_pts1(:,2),all_pts1(:,3),3,'r','fill'); hold on;
+    % scatter3(all_pts2_transformed2(:,1),all_pts2_transformed2(:,2),all_pts2_transformed2(:,3),3,'b','fill'); hold on; axis equal; view([az,el]);
+    % F = getframe(gcf); [X2, Map] = frame2im(F); X2 = imresize(X2, [size(X1,1) size(X1,2)]);
+    % X = [X1 X2]; imwrite(X, [exp_re_path '/3d_pts_' num2str(frame) '.png']);
     
-    [error1, new_image1] = get_error(extrinsic_params1, intrinsic_params1, all_pts2, rgb2, rgb1, param1, fin_ind2');
-    [error2, new_image2] = get_error(extrinsic_params1, intrinsic_params1, all_pts2, rgb2, rgb1, param2, fin_ind2');
-    imwrite([new_image1 new_image2], [exp_re_path '/rgb_' num2str(frame) '.png']);
-    error_recorder1(frame) = error1; error_recorder2(frame) = error2;
-    if error1 < error2
-        param_record(frame,:) = param1(:);
-    else
-        param_record(frame,:) = param2(:);
+    error_record1 = zeros(size(params1, 1), 1); error_record2 = zeros(size(params2, 1), 1); 
+    new_image1_record = cell(size(params1, 1), 1); new_image2_record = cell(size(params2, 1), 1);
+    for i = 1 : size(params1, 1)
+        % param1 = params1(i,:,:); param2 = params2(i,:,:);
+        param1 = params1{i}; param2 = params2{i};
+        [error1, new_image1] = get_error(extrinsic_params1, intrinsic_params1, all_pts2, rgb2, rgb1, param1, fin_ind2');
+        [error2, new_image2] = get_error(extrinsic_params1, intrinsic_params1, all_pts2, rgb2, rgb1, param2, fin_ind2');
+        error_record1(i) = error1; error_record2(i) = error2;
+        new_image1_record{i} = new_image1; new_image2_record{i} = new_image2;
+        % imwrite([new_image1 new_image2], [exp_re_path '/rgb_' num2str(frame) '.png']);
+        % error_recorder1(frame) = error1; error_recorder2(frame) = error2;
+        % if error1 < error2
+        %     param_record(frame,:) = params1(:);
+        % else
+        %     param_record(frame,:) = params2(:);
+        % end
     end
+    
+    if min(error_record1) < min(error_record2)
+        ind = find(error_record1 == min(error_record1)); ind = ind(1);
+        param = params1{ind}; image = new_image1_record{ind};
+        error_record(frame) = error_record1(ind); param_record(frame, :) = param(:);
+        % serial_record(frame) = ind;
+    else
+        ind = find(error_record2 == min(error_record2)); ind = ind(1);
+        param = params2{ind}; image = new_image2_record{ind};
+        error_record(frame) = error_record2(ind); param_record(frame, :) = param(:);
+        % serial_record(frame) = ind;
+    end
+    draw_and_save_image(all_pts1, all_pts2, param, image, exp_re_path, frame, extrinsic_params1)
+    
+    
     % scatter3(all_pts2(:,1),all_pts2(:,2),all_pts2(:,3),3,'b','fill');
     % subplot(1,2,1); imshow(rgb1); subplot(1,2,2); imshow(rgb2);
     % Get segmentation mark groudtruth (Instance id looks broken)
@@ -87,10 +111,30 @@ for frame = 8 : n - 1
     % reconstructed_3d_pts_record{frame} = reconstructed_3d; affine_matrix_record{frame} = affine_matrx;
     % error_record(frame) = mean_error;
 end
-write_error(exp_re_path, error_recorder1, error_recorder2);
-figure(1); clf; stem(1:length(error_recorder1), [error_recorder1 error_recorder2],'fill','MarkerSize',2); legend('RANSC', 'RANSC + quadratic optimization')
-F = getframe(gcf); [X, Map] = frame2im(F); imwrite(X, [exp_re_path '/error_stem' '.png']);
-save('adjust_matrix.mat', 'param_record');
+write_error(exp_re_path, error_record);
+figure(1); clf; stem(error_record, 'fill'); % stem(1:length(error_recorder1), [error_recorder1 error_recorder2],'fill','MarkerSize',2); legend('RANSC', 'RANSC + quadratic optimization')
+F = getframe(gcf); [X, ~] = frame2im(F); imwrite(X, [exp_re_path '/error_stem' '.png']);
+% figure(1); clf; stem(serial_record(serial_record~=0), 'fill')
+% F = getframe(gcf); [X, ~] = frame2im(F); imwrite(X, [exp_re_path '/serial_record' '.png']);
+save(['supplementary_data/' get_current_time_string() '_adjust_matrix.mat'], 'param_record');
+function [camera_position, camera_dirction] = get_camera_pos_and_direction(extrinsic_params)
+    logic_origin = [0 0 0 1]; logic_positive_direction = [0 0 1 1];
+    camera_position = (inv(extrinsic_params) * logic_origin')';
+    camera_dirction = (inv(extrinsic_params) * logic_positive_direction')'; camera_dirction = camera_dirction - camera_position;
+end
+function DateString = get_current_time_string()
+    DateString = datestr(datetime('now'));
+    DateString = strrep(DateString,'-','_');DateString = strrep(DateString,' ','_');DateString = strrep(DateString,':','_'); DateString = DateString(1:14);
+end
+function draw_and_save_image(all_pts1, all_pts2, param, image, exp_re_path, frame, extrinsic_params)
+    all_pts2_transformed = (param * all_pts2')'; [camera_position, camera_direction] = get_camera_pos_and_direction(extrinsic_params);
+    figure(1); clf; scatter3(all_pts1(:,1),all_pts1(:,2),all_pts1(:,3),3,'r','fill'); hold on; 
+    scatter3(all_pts2_transformed(:,1),all_pts2_transformed(:,2),all_pts2_transformed(:,3),3,'g','fill'); hold on;
+    scatter3(camera_position(1), camera_position(2), camera_position(3), 10, 'b', 'fill'); hold on;
+    quiver3(camera_position(1), camera_position(2), camera_position(3), camera_direction(1), camera_direction(2), camera_direction(3), 15);
+    F = getframe(gcf); [X, ~] = frame2im(F); imwrite(X, [exp_re_path '/3d_pts_' num2str(frame) '.png']);
+    imwrite(image, [exp_re_path '/scene' num2str(frame) '.png']);
+end
 function [error, new_img] = get_error(extrinsic, intrinsic, pts3d, rgb_img_from, rgb_img_to, affine_matrix, lin_ind2)
     pts3d_transed = (affine_matrix * pts3d')'; image_size = [size(rgb_img_from, 1) size(rgb_img_from,2)];
     [projected_pts, valid] = projectPoints(pts3d_transed, intrinsic(1:3,1:3),extrinsic,[0,0,0,0,0],[image_size(1)-1 image_size(2)-1],false);
@@ -113,45 +157,88 @@ function [error, new_img] = get_error(extrinsic, intrinsic, pts3d, rgb_img_from,
     new_img = uint8(zeros([image_size, 3])); new_img(:,:,1) = r1; new_img(:,:,2) = g1; new_img(:,:,3) = b1; 
     % figure(2); clf; imshow(new_img);
 end
-function write_error(path, error_recorder1, error_recorder2)
+function write_error(path, error_record)
     fileID = fopen([path '/' 'exp_re_recorder.txt'],'w');
-    for i = 1 : length(error_recorder1)
-        fprintf(fileID, '%5d\t%5d\n', error_recorder1(i), error_recorder2(i));
+    for i = 1 : length(error_record)
+        fprintf(fileID, '%5d\n', error_record(i));
     end
-    fprintf(fileID, 'Average error for RANSC: %5d\nAverage error for RANSC + quadratic optimization: %5d\n', sum(error_recorder1) / length(error_recorder1), sum(error_recorder2) / length(error_recorder2));
+    fprintf(fileID, 'Average error: %5d\n', sum(error_record) / length(error_record));
     fprintf(fileID, '%% Metric is rgb pixel value differences between buildings and poles in the consecutive frames.\n');
     fclose(fileID);
 end
 function path = make_dir()
-    father_folder = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/';
+    father_folder = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/alignment_results/';
     DateString = datestr(datetime('now'));
-    DateString = strrep(DateString,'-','_');DateString = strrep(DateString,' ','_');DateString = strrep(DateString,':','_');
+    DateString = strrep(DateString,'-','_');DateString = strrep(DateString,' ','_');DateString = strrep(DateString,':','_'); DateString = DateString(1:14);
     path = [father_folder DateString];
     mkdir(path);
 end
-function [param, error] = RANSAC_estimation(cores_pts1, cores_pts2)
+function params = RANSAC_estimation(cores_pts1, cores_pts2)
     % Synthia dataset, error comes from Feature points selection procedure
     % Suppose little noise contain within the camera matrix, both extrinsic
     % and intrinsic
-    pt_num = 4; tot_it_num = 1000; dist_record = zeros(tot_it_num, 1); frac = 0.5; param_record = zeros(tot_it_num, 16);
+    pt_num = 4; tot_it_num = 5000; dist_record = zeros(tot_it_num, 1); frac = 0.5; param_record = zeros(tot_it_num, 16);
+    valid_entry_ind = [1 2 3 5 12 15 20]; 
+    % valid_entry_ind = [1];
+    errors = zeros(length(valid_entry_ind), 1); params = cell(length(valid_entry_ind), 1);
     for i = 1 : tot_it_num
         ind = randperm(size(cores_pts1,1), pt_num);
         aff  = cores_pts1(ind, :)' * inv(cores_pts2(ind, :)');
         cur_dist = (cores_pts1 - (aff * cores_pts2')'); cur_dist = cur_dist(:, 1:3);
         cur_dist = sqrt(sum(cur_dist.^2, 2)); sorted_dist = sort(cur_dist); dist_record(i) = sum(sorted_dist(1:ceil(length(sorted_dist)*frac))); param_record(i,:) = aff(:);
     end
-    error = min(dist_record) / ceil(size(cores_pts1,1) * frac);
-    ind = find(dist_record == min(dist_record)); ind = ind(1); param = reshape(param_record(ind,:), [4,4]);
+    % errors = designate_value_without_constrain(errors, sorted_dist_record / ceil(size(cores_pts1,1) * frac), valid_entry_ind);
+    indices = organize_dist_ind(dist_record / ceil(size(cores_pts1,1) * frac), valid_entry_ind);
+    params = designate_value_without_constrain_cell(params, param_record, indices);
     % tred_pts = (param * cores_pts2')';
     % figure(1); clf;
     % scatter3(cores_pts1(:,1),cores_pts1(:,2),cores_pts1(:,3),3,'r','fill'); hold on; scatter3(cores_pts2(:,1),cores_pts2(:,2),cores_pts2(:,3),3,'b','fill');
     % scatter3(tred_pts(:,1),tred_pts(:,2),tred_pts(:,3),3,'g','fill'); hold on; 
 end
-function [param, error] = RANSAC_estimation_2(cores_pts1, cores_pts2)
+function indices = organize_dist_ind(dist_record, valid_entry_ind)
+    sorted_dist_record = sort(dist_record); indices = zeros(length(valid_entry_ind), 1);
+    for i = 1 : length(valid_entry_ind)
+        cur_ind = find(dist_record == sorted_dist_record(valid_entry_ind(i)));
+        indices(i) = cur_ind(1);
+    end
+end
+%{
+function new_params = organize_param(params)
+    new_params = zeros(size(params, 1), 4, 4);
+    for i = 1 : size(params, 1)
+        new_params(i,:,:) = reshape(params(i, :), [4, 4]);
+    end
+end
+%}
+function to_designate_array = designate_value_without_constrain_cell(to_designate_array, value_array, index_array)
+    valid_entry = true(length(index_array), 1);
+    for i = 1 : length(index_array)
+        try to_designate_array{i} = reshape(value_array(index_array(i),:), [4 4]);
+        catch
+            valid_entry(i) = false;
+            disp('Not enough elements, value designation cancelled')
+        end
+    end
+    to_designate_array = to_designate_array(valid_entry);
+end
+function to_designate_array = designate_value_without_constrain(to_designate_array, value_array, index_array)
+    valid_entry = true(length(index_array), 1);
+    for i = 1 : length(index_array)
+        try to_designate_array(i,:) = value_array(index_array(i),:);
+        catch
+            valid_entry(i) = false;
+            disp('Not enough elements, value designation cancelled')
+        end
+    end
+    to_designate_array = to_designate_array(valid_entry, :);
+end
+function refined_params = RANSAC_estimation_2(cores_pts1, cores_pts2, rude_params)
     % Synthia dataset, error comes from Feature points selection procedure
     % Suppose little noise contain within the camera matrix, both extrinsic
     % and intrinsic
-    pt_num = 4; tot_it_num = 1000; dist_record = zeros(tot_it_num, 1); frac = 0.5; param_record = zeros(tot_it_num, 16); frac2 = 0.2;
+    % pt_num = 4; tot_it_num = 1000; dist_record = zeros(tot_it_num, 1); frac = 0.5; param_record = zeros(tot_it_num, 16); 
+    frac2 = 0.2; refined_params = cell(size(rude_params, 1),1);
+    %{
     for i = 1 : tot_it_num
         ind = randperm(size(cores_pts1,1), pt_num);
         aff  = cores_pts1(ind, :)' * inv(cores_pts2(ind, :)');
@@ -160,21 +247,24 @@ function [param, error] = RANSAC_estimation_2(cores_pts1, cores_pts2)
     end
     error = min(dist_record) / ceil(size(cores_pts1,1) * frac);
     ind = find(dist_record == min(dist_record)); ind = ind(1); param = reshape(param_record(ind,:), [4,4]);
-    
+    %}
     % proj_pts = (param * cores_pts2')'; num_to_estimate = ceil(size(cores_pts1, 1) * frac2);
     % dist = sum((cores_pts1(:, 1:3) - proj_pts(:, 1:3)).^2,2); [~, ind] = sort(dist); to_estimate_ind = ind(1:num_to_estimate);
     % pts1_to_estimate = cores_pts1(to_estimate_ind, :)'; pts2_to_estimate = cores_pts2(to_estimate_ind, :)';
     % a = sum(sum((pts1_to_estimate - (param * pts2_to_estimate)).^2)) / ceil(size(cores_pts1,1) * frac);
     
-    
-    proj_pts = (param * cores_pts2')'; num_to_estimate = ceil(size(cores_pts1, 1) * frac2);
-    dist = sum((cores_pts1(:, 1:3) - proj_pts(:, 1:3)).^2,2); [~, ind] = sort(dist); to_estimate_ind = ind(1:num_to_estimate);
-    pts1_to_estimate = cores_pts1(to_estimate_ind, :)'; pts1_to_estimate = pts1_to_estimate(1:3, :);
-    pts2_to_estimate = cores_pts2(to_estimate_ind, :)'; pts2_to_estimate = pts2_to_estimate(1:3, :);
-    [R_, T_] = ana_sol_for_affine(pts1_to_estimate, pts2_to_estimate); param = zeros(4,4); param(1:3,1:3) = R_; param(1:3,4) = T_; param(4,4) = 1;
+    for i = 1 : size(rude_params, 1)
+        param = rude_params{i};
+        proj_pts = (param * cores_pts2')'; num_to_estimate = ceil(size(cores_pts1, 1) * frac2);
+        dist = sum((cores_pts1(:, 1:3) - proj_pts(:, 1:3)).^2,2); [~, ind] = sort(dist); to_estimate_ind = ind(1:num_to_estimate);
+        pts1_to_estimate = cores_pts1(to_estimate_ind, :)'; pts1_to_estimate = pts1_to_estimate(1:3, :);
+        pts2_to_estimate = cores_pts2(to_estimate_ind, :)'; pts2_to_estimate = pts2_to_estimate(1:3, :);
+        [R_, T_] = ana_sol_for_affine(pts1_to_estimate, pts2_to_estimate); param = zeros(4,4); param(1:3,1:3) = R_; param(1:3,4) = T_; param(4,4) = 1;
+        refined_params{i} = param;
+    end
     % cur_dist = (cores_pts1 - (aff * cores_pts2')'); cur_dist = cur_dist(:, 1:3);
     % cur_dist = sqrt(sum(cur_dist.^2, 2)); sorted_dist = sort(cur_dist); sum(sorted_dist(1:ceil(length(sorted_dist)*frac))) / ceil(size(cores_pts1,1) * frac);
-    % pts1_to_estimate = cores_pts1(to_estimate_ind, :)'; 
+    % pts1_to_estimate = cores_pts1(to_estimate_ind, :)';
     % pts2_to_estimate = cores_pts2(to_estimate_ind, :)';
     % b = sum(sum((pts1_to_estimate - (param * pts2_to_estimate)).^2)) / ceil(size(cores_pts1,1) * frac);
     % a - b
@@ -223,26 +313,6 @@ function [new_img, fin_ind] = get_processed_img(img, label)
     SE = strel('square',20); bool_img = imdilate(bool_img, SE); val_ind = find(bool_img == true); new_img(val_ind) = img(val_ind);
     fin_ind = [find(label == building_ind); find(label == pole_ind)];
 end
-function error = estimate_error(params, pts)
-    pts_new = (params * pts')';
-    height = pts_new(:, 3) - mean(pts_new(:, 3));
-    error = sum(abs(height)) / size(pts, 1);
-end
-function [affine_matrx, mean_error, param] = estimate_origin_ground_plane(pts)
-    mean_pts = mean(pts);
-    sum_mean_xy = sum((pts(:,1) - mean_pts(1)) .* (pts(:,2) - mean_pts(2)));
-    sum_mean_x2 = sum((pts(:,1) - mean_pts(1)).^2);
-    sum_mean_y2 = sum((pts(:,2) - mean_pts(2)).^2);
-    sum_mean_xz = sum((pts(:,1) - mean_pts(1)) .* (pts(:,3) - mean_pts(3)));
-    sum_mean_yz = sum((pts(:,2) - mean_pts(2)) .* (pts(:,3) - mean_pts(3)));
-    M = [sum_mean_x2 sum_mean_xy; sum_mean_xy sum_mean_y2];
-    N = [sum_mean_xz; sum_mean_yz];
-    param_intermediate = inv(M) * N;
-    A = param_intermediate(1); B = param_intermediate(2);
-    param = [A, B, -1, -A*mean_pts(1)-B*mean_pts(2)+mean_pts(3)];
-    affine_matrx = get_affine_transformation_from_plane(param, pts);
-    mean_error = sum((param * pts').^2) / size(pts, 1);
-end
 
 function [reconstructed_3d, projects_pts] = get_3d_pts(depth_map, extrinsic_params, intrinsic_params, valuable_ind)
     valuable_ind = valuable_ind';
@@ -254,24 +324,6 @@ function [reconstructed_3d, projects_pts] = get_3d_pts(depth_map, extrinsic_para
     projects_pts = [pts(valuable_ind,2) .* depth_map(valuable_ind), pts(valuable_ind,1) .* depth_map(valuable_ind), depth_map(valuable_ind), ones(length(valuable_ind), 1)];
     reconstructed_3d = (inv(intrinsic_params * extrinsic_params) * projects_pts')';
 end
-function affine_transformation = get_affine_transformation_from_plane(param, pts)
-    origin = mean(pts); origin = origin(1:3);
-    dir1 = (rand_sample_pt_on_plane(param, true) - rand_sample_pt_on_plane(param, false)); dir1 = dir1 / norm(dir1);
-    dir3 = param(1:3); dir3 = dir3 / norm(dir3);
-    dir2 = cross(dir1, dir3); dir2 = dir2 / norm(dir2);
-    dir =[dir1;dir2;dir3];
-    affine_transformation = get_affine_transformation(origin, dir);
-end
-function pt = rand_sample_pt_on_plane(param, flag)
-    if flag
-        pt = [0.246803226722827,0.224725490320235];
-    else
-        pt = [-0.511126612064835,1.17827305388577];
-    end
-    % pt = randn([1 2]);
-    pt = [pt, - (param(1) * pt(1) + param(2) * pt(2) + param(4)) / param(3)];
-    
-end
 function correspondence = find_correspondence_between_img(img1, img2, range_ind1, range_ind2)
     [fa,da] = vl_sift(single(img1)); ind1 = sub2ind(size(img1), round(fa(2,:)), round(fa(1,:)));
     [fb,db] = vl_sift(single(img2)); ind2 = sub2ind(size(img2), round(fb(2,:)), round(fb(1,:)));
@@ -281,28 +333,4 @@ function correspondence = find_correspondence_between_img(img1, img2, range_ind1
     la = la1 & la2; new_ind1 = new_ind1(la); new_ind2 = new_ind2(la); correspondence = [new_ind1; new_ind2];
     % img1(new_ind1) = 255; img2(new_ind2) = 255;
     % figure(1);clf;imshow(uint8(img1)); figure(2);clf;imshow(uint8(img2));
-end
-function affine_transformation = get_affine_transformation(origin, new_basis)
-    pt_camera_origin_3d = origin;
-    x_dir = new_basis(1, :);
-    y_dir = new_basis(2, :);
-    z_dir = new_basis(3, :);
-    new_coord1 = [1 0 0];
-    new_coord2 = [0 1 0];
-    new_coord3 = [0 0 1];
-    new_pts = [new_coord1; new_coord2; new_coord3];
-    old_Coord1 = pt_camera_origin_3d + x_dir;
-    old_Coord2 = pt_camera_origin_3d + y_dir;
-    old_Coord3 = pt_camera_origin_3d + z_dir;
-    old_pts = [old_Coord1; old_Coord2; old_Coord3];
-    
-    T_m = new_pts' * inv((old_pts - repmat(pt_camera_origin_3d, [3 1]))');
-    transition_matrix = eye(4,4);
-    transition_matrix(1:3, 1:3) = T_m;
-    transition_matrix(1, 4) = -pt_camera_origin_3d * x_dir';
-    transition_matrix(2, 4) = -pt_camera_origin_3d * y_dir';
-    transition_matrix(3, 4) = -pt_camera_origin_3d * z_dir';
-    affine_transformation = transition_matrix;
-    % Check:
-    % (affine_transformation * [old_pts ones(3,1)]')'
 end

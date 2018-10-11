@@ -1,68 +1,87 @@
-function params_end = analytical_gradient_pos_v3(cuboid, intrinsic_param, extrinsic_param, depth_map, lin_ind, visible_pt_3d)
-    % load('supplementary_data/26_Sep_2018_15debug_ana_3.mat')
-    % global exp_num path;
+function best_cuboid = analytical_gradient_multiple_frame(cuboid, depth_map_collection, sampled_visible_pts_set, organized_data)
+    % cuboid, intrinsic_param, extrinsic_param, depth_map, lin_ind, visible_pt_3d, pts_3d_record
     params = generate_cubic_params(cuboid);
-    params = mutate_params(params);
-    activation_label = [1 1 1 0 0 0]; activation_label = (activation_label == 1); it_num = 200; diff_record = zeros(it_num, 1);
-    % delta_record = zeros(it_num, 1); 
-    % if exp_num == 1 
-    %     path = make_dir(); 
-    % end
-    % clear; load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/cubic_shape_estimation/27_Sep_2018_19/44.mat');
+    activation_label = [1 1 1 1 1 0]; activation_label = (activation_label == 1); it_num = 500; diff_record = zeros(it_num, 1);
+    params_record = zeros(it_num, 6);
     for i = 1 : it_num
-        % delta_theta = get_delta_value(visible_pt_3d, params, extrinsic_param, intrinsic_param, activation_label, depth_map);
-        [sum_diff, sum_hessian] = accum_diff_and_hessian_pos(visible_pt_3d, params, extrinsic_param, intrinsic_param, activation_label, depth_map);
+        sum_diff = 0; sum_hessian = zeros(sum(activation_label)); sum_loss = 0;
+        for j = 1 : length(organized_data)
+            [visible_pt_3d, extrinsic_param, intrinsic_param, depth_map] = distill_params(sampled_visible_pts_set, organized_data, depth_map_collection, j);
+            [accum_diff, accum_hessian] = accum_diff_and_hessian_pos(visible_pt_3d, params, extrinsic_param, intrinsic_param, activation_label, depth_map);
+            sum_diff = sum_diff + accum_diff; sum_hessian = sum_hessian + accum_hessian;
+            sum_loss = sum_loss + calculate_diff_pos(depth_map, intrinsic_param, extrinsic_param, visible_pt_3d, params);
+        end
         delta_theta = smooth_hessian(sum_diff, sum_hessian, activation_label);
-        diff = calculate_diff_pos(depth_map, intrinsic_param, extrinsic_param, visible_pt_3d, params);
-        diff_record(i) = diff;
         if(judge_stop(delta_theta, params, diff_record))
             break
         end
-         % delta_record(i) = delta_theta;
-        % old_params = params; 
         params = update_param(params, delta_theta, activation_label);
-        %{
-        if mod(i, 200) == 1 | mod(i, 200) == 50 | mod(i, 200) == 100 | mod(i, 200) == 150 | mod(i, 200) == 200
-            img1 = plot_scene(cuboid, params, visible_pt_3d);
-            img2 = visualize_on_depth_map(depth_map, params, visible_pt_3d, extrinsic_param, intrinsic_param);
-            save_img(path, i, img1, img2, exp_num)
-        end
-        %}
+        params_record(i,:) = params; diff_record(i) = sum_loss;
     end
-    figure(1); clf; stem(diff_record(diff_record~=0),'fill')
-    %{
-    params_end = old_params;
-    img1 = plot_scene(cuboid, params_end, visible_pt_3d);
-    img2 = visualize_on_depth_map(depth_map, params_end, visible_pt_3d, extrinsic_param, intrinsic_param);
-    save_img(path, i, img1, img2, exp_num)
-    plot_and_save_stem(diff_record, path, exp_num)
-    record_metric(params_gt, params_initial, params_end, diff_record, path, exp_num);
-    exp_num = exp_num + 1;
-    %}
+    params_record = params_record(diff_record~=0, :); diff_record = diff_record(diff_record~=0);
+    best_cuboid = select_best(params_record, diff_record, organized_data);
+    % [depth_map, re_3d, stem_map] = organize_output_re(params_record, diff_record, sampled_visible_pts_set, depth_map_collection);
 end
-function record_metric(params_gt, params_initial, params_end, diff_record, path, exp_num)
-    diff_record = diff_record(diff_record~=0); numerical_stable_fac = 0.0000000000001;
-    params_ratio = abs(params_gt - params_end + numerical_stable_fac) ./ abs(params_gt - params_initial + numerical_stable_fac);
-    if exp_num == 1
-        f1 = fopen([path '/' 'params_diff.txt'],'w');
-        f2 = fopen([path '/' 'delta_record.txt'],'w');
-        f3 = fopen([path '/' 'gt_params_record.txt'],'w');
-        f4 = fopen([path '/' 'final_params_record.txt'],'w');
-        print_matrix(f1, params_ratio);
-        print_matrix(f2, [diff_record(1) diff_record(end)])
-        print_matrix(f3, params_gt);
-        print_matrix(f4, params_end);
-    else
-        f1 = fopen([path '/' 'params_diff.txt'],'a');
-        f2 = fopen([path '/' 'delta_record.txt'],'a');
-        f3 = fopen([path '/' 'gt_params_record.txt'],'a');
-        f4 = fopen([path '/' 'final_params_record.txt'],'a');
-        print_matrix(f1, params_ratio);
-        print_matrix(f2, [diff_record(1) diff_record(end)])
-        print_matrix(f3, params_gt);
-        print_matrix(f4, params_end);
+function org_entry = read_in_org_entry(frame)
+    path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/segmentation_results/21_Sep_2018_07_segmentation/Instance_map_unioned/';
+    ind = num2str(frame, '%06d');
+    loaded = load([path ind '.mat']); org_entry = loaded.prev_mark;
+end
+function best_cuboid = select_best(params_record, diff_record, organized_data)
+    num_record = zeros(size(params_record, 1), 1);
+    for i = 1 : size(params_record, 1)
+        num_record(i) = calculate_tot_num(organized_data, params_record(i,:));
     end
-    fclose(f1); fclose(f2);
+    ave_diff = diff_record ./num_record; min_ind = find(ave_diff == min(ave_diff)); best_params = params_record(min_ind, :);
+    best_cuboid = generate_center_cuboid_by_params(best_params); pts_new = organized_data{1}.pts_new;
+    % figure(1); clf; draw_cubic_shape_frame(best_cuboid); hold on; scatter3(pts_new(:,1),pts_new(:,2),pts_new(:,3),3,'g','fill')
+end
+function tot_num = calculate_tot_num(organized_data, params)
+    tot_num = 0;
+    for i = 1 : length(organized_data)
+        cuboid = generate_center_cuboid_by_params(params); pts_2d = organized_data{i}.pts_new; pts_2d = [pts_2d(:,1:2) ones(size(pts_2d,1),1)];
+        tot_num = tot_num + judge_pts_in_cuboid(cuboid, pts_2d, organized_data{i}.pts_new);
+    end
+end
+function num = judge_pts_in_cuboid(cuboid, pts_sampled, pts_org)
+    lose_fac = 0.0001;
+    corner_points = cuboid{5}.pts(:,1:2);
+    org_pt = [corner_points(1,:) 1]; pt_x = [corner_points(2,:) 1]; pt_y = [corner_points(4,:), 1];
+    l = norm(pt_x - org_pt); w = norm(pt_y - org_pt);
+    pts_old = [org_pt;pt_x;pt_y;]; pts_new = [0, 0, 1; l, 0, 1; 0, w, 1;]; A = pts_new' * smooth_inv(pts_old');
+    pts_sampled_transed = (A * pts_sampled')';
+    selector = (pts_sampled_transed(:,1) <= l + lose_fac) & (pts_sampled_transed(:,1) >= 0 - lose_fac) & (pts_sampled_transed(:,2) <= w + lose_fac) & (pts_sampled_transed(:,2) >= 0 - lose_fac);
+    num = sum(selector); in_pts = pts_org(selector, :); out_pts = pts_org(~selector, :);
+    % figure(1); clf; draw_cubic_shape_frame(cuboid); hold on; scatter3(in_pts(:,1),in_pts(:,2),in_pts(:,3),3,'g','fill');
+    % hold on; scatter3(out_pts(:,1),out_pts(:,2),out_pts(:,3),3,'r','fill');
+end
+function A_inv = smooth_inv(A)
+    warning(''); size_A = size(A,1);
+    A_inv = inv(A);
+    if length(lastwarn) ~= 0
+        A_inv = inv(A + eye(size_A) * 0.1);
+    end
+end
+function [visible_pt_3d, extrinsic_param, intrinsic_param, depth_map] = distill_params(sampled_visible_pts_set, organized_data, depth_map_collection, frame)
+    visible_pt_3d = sampled_visible_pts_set{frame}; visible_pt_3d = visible_pt_3d(:,4:6); visible_pt_3d = [visible_pt_3d(:,2:3), visible_pt_3d(:,1)];
+    extrinsic_param = organized_data{frame}.extrinsic_params * inv(organized_data{frame}.affine_matrx);
+    intrinsic_param = organized_data{frame}.intrinsic_params; depth_map = depth_map_collection{frame};
+end
+function [best_params, depth_map, re_3d, stem_map, max_iou] = organize_output_re(params_record, cuboid_gt, diff_record, visible_pt_3d, depth_map, extrinsic_param, intrinsic_param)
+    [best_cuboid, max_iou, best_params] = find_best_cuboid(params_record, cuboid_gt);
+    stem_map = plot_stem(diff_record);
+    re_3d = plot_scene(cuboid_gt, best_params, visible_pt_3d);
+    re_2d = visualize_on_depth_map(depth_map, best_params, visible_pt_3d, extrinsic_param, intrinsic_param);
+end
+function [best_cuboid, max_iou, best_params] = find_best_cuboid(params_record, cuboid_gt)
+    iou_record = zeros(length(params_record), 1);
+    for i = 1 : length(params_record)
+        cuboid_cur = generate_center_cuboid_by_params(params_record(i,:));
+        iou_record(i) = calculate_IOU(cuboid_gt, cuboid_cur);
+    end
+    ind_max = find(iou_record == max(iou_record)); ind_max = ind_max(1);
+    best_cuboid = generate_center_cuboid_by_params(params_record(ind_max,:));
+    max_iou = max(iou_record); best_params = params_record(ind_max,:);
 end
 function print_matrix(fileID, m)
     for i = 1 : size(m,1)
@@ -73,7 +92,7 @@ function print_matrix(fileID, m)
     end
 end
 function is_stop = judge_stop(delta, params, diff_record)
-    delta_th = 0.5; params_th = 0.1; is_stop = false; diff_record = diff_record(diff_record~=0);
+    params_th = 0.1; is_stop = false; diff_record = diff_record(diff_record~=0);
     step_range = 10; th_hold = 10;
     if sum((params(4:5))) < params_th
         is_stop = true;
@@ -84,16 +103,8 @@ function is_stop = judge_stop(delta, params, diff_record)
         end
     end
 end
-function params = mutate_params(params)
-    params(1) = params(2) + rand * 0.5;
-    params(4) = params(4) + abs(rand) * 2;
-    params(5) = params(5) + abs(rand) * 2;
-    params(2) = params(2) + abs(rand) * 5;
-    params(3) = params(3) + abs(rand) * 5;
-end
-function plot_and_save_stem(diff_record, path, exp_num)
+function X = plot_stem(diff_record)
     f = figure('visible', 'off'); stem(diff_record(diff_record~=0), 'fill'); F = getframe(f); [X, Map] = frame2im(F);
-    imwrite(X, [path '/' num2str(exp_num) '_' 'error' '.png']);
 end
 function X = plot_scene(old_cuboid, params, visible_pt_3d)
     % figure(1); clf; scatter3(pts_new(:, 1), pts_new(:, 2), pts_new(:, 3), 3, 'g', 'fill'); hold on;
@@ -120,17 +131,6 @@ function X = visualize_on_depth_map(depth_map, params, visible_pt_3d, extrinsic_
     imshow(depth_map);
     F = getframe(f); [X, Map] = frame2im(F);
     % depth_map = add_depth_to_depth_map(depth_map, pts2d, 2000);
-end
-function save_img(path, frame, img1, img2, exp_num)
-    imwrite(img1, [path '/' num2str(exp_num) '_' '3d_img_' num2str(frame) '.png']);
-    imwrite(img2, [path '/' num2str(exp_num) '_' '2d_img_' num2str(frame) '.png']);
-end
-function path = make_dir()
-    father_folder = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/cubic_shape_estimation/';
-    DateString = datestr(datetime('now'));
-    DateString = strrep(DateString,'-','_');DateString = strrep(DateString,' ','_');DateString = strrep(DateString,':','_'); DateString = DateString(1:14);
-    path = [father_folder DateString];
-    mkdir(path);
 end
 function delta_theta = get_delta_value(visible_pt_3d, params, extrinsic_param, intrinsic_param, activation_label, depth_map)
     k1 = visible_pt_3d(:, 1); k2 = visible_pt_3d(:, 2); plane_ind_set = visible_pt_3d(:, 3); pts_num = size(visible_pt_3d, 1);
@@ -228,4 +228,8 @@ end
 function params = generate_cubic_params(cuboid)
     theta = cuboid{1}.theta; l = cuboid{1}.length1; w = cuboid{2}.length1; h = cuboid{1}.length2; center = mean(cuboid{5}.pts); xc = center(1); yc = center(2);
     params = [theta, xc, yc, l, w, h];
+end
+function cuboid = generate_center_cuboid_by_params(params)
+    theta = params(1); xc = params(2); yc = params(3); l = params(4); w = params(5); h = params(6);
+    cuboid = generate_cuboid_by_center(xc, yc, theta, l, w, h);
 end

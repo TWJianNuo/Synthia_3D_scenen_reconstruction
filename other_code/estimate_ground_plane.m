@@ -1,11 +1,8 @@
-function [affine_matrx, mean_error] = estimate_ground_plane(frame)
-    intrinsic_params = get_intrinsic_matrix();
-    [extrinsic_params, depth, label, ~] = grab_provided_data(frame);
+function [affine_matrx, mean_error] = estimate_ground_plane(intrinsic_params, extrinsic_params, depth, label)
     road_label = 3; 
     road_pt_3d = acquire_3d_reconstructed_pts(extrinsic_params, intrinsic_params, depth, label, road_label);    
     [affine_matrx, ~, mean_error] = estimate_plane(road_pt_3d);
 end
-
 function [affine_matrx, org_error, current_error] = estimate_plane(org_pts)
     [affine_matrx, ~] = quadrtic_plane_optimization(org_pts); 
     

@@ -345,7 +345,7 @@ function linear_ind = down_sample_data(linear_ind)
 end
 function params = update_param(params, delta_theta, activation_label)
     gamma = 0.5;
-    params(activation_label) = params(activation_label) + gamma * delta_theta;
+    params(activation_label) = params( ) + gamma * delta_theta;
 end
 %{
 function delta_theta = smooth_hessian(sum_diff, sum_hessian, activation_label)

@@ -1,0 +1,2 @@
+load('data_for_visualization');
+[sum_diff, sum_hess, sum_loss] = visualize_combine_multi(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pt_3d, num_pos, num_inv, activation_label);

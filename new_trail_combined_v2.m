@@ -20,9 +20,9 @@ function optimize_rectangles(rectangulars, depth_map)
         optimize_cubic_shape(rectangulars{1}, depth_map, i);
     end
 end
-function save_results(re_depth_map, space_map, stem_map, iou, flag, count_num)
+function save_results(re_depth_map, space_map, stem_map, iou, flag, count_num, best_ratio)
     global path1 path2
-    record_metric(iou, count_num, flag);
+    record_metric(iou, count_num, flag, best_ratio);
     if flag == 1
         imwrite(re_depth_map, [path1 '/' num2str(count_num) '_' '2d_img' '.png']);
         imwrite(space_map, [path1 '/' num2str(count_num) '_' '3d_img' '.png']);
@@ -46,10 +46,10 @@ function [best_params, re_depth_map, space_map, stem_map] = optimize_cubic_shape
     %}
     load('trail_inv.mat');
     init_cuboid = cuboid; cuboid = mutate_cuboid(cuboid); [cuboid, is_valide] = tune_cuboid(cuboid, T*inv(A), P);
-    [best_params, re_depth_map, space_map, stem_map, iou] = analytical_gradient_combined(cuboid, P, T*inv(A), processed_depth_map, lin_ind, sampled_visible_pts, init_cuboid);
-    save_results(re_depth_map, space_map, stem_map, iou, 1, count_num)
-    [best_params, re_depth_map, space_map, stem_map, iou] = analytical_gradient_forward_v3(cuboid, P, T*inv(A), processed_depth_map, lin_ind, sampled_visible_pts, pts_3d_record, init_cuboid);
-    save_results(re_depth_map, space_map, stem_map, iou, 2, count_num)
+    [best_params, re_depth_map, space_map, stem_map, iou, best_ratio, best_iou_of_each_k] = analytical_gradient_combined_v2(cuboid, P, T*inv(A), processed_depth_map, lin_ind, sampled_visible_pts, init_cuboid);
+    save_results(re_depth_map, space_map, stem_map, iou, 1, count_num, best_iou_of_each_k)
+    % [best_params, re_depth_map, space_map, stem_map, iou] = analytical_gradient_forward_v3(cuboid, P, T*inv(A), processed_depth_map, lin_ind, sampled_visible_pts, pts_3d_record, init_cuboid);
+    % save_results(re_depth_map, space_map, stem_map, iou, 2, count_num)
     % fin_param = analytical_gradient_pos_v3(cuboid, P, T*inv(A), processed_depth_map, lin_ind, sampled_visible_pts, pts_3d_record, init_cuboid, count_num, path1);
     % fin_param = analytical_gradient_v3(cuboid, P, T*inv(A), processed_depth_map, lin_ind, sampled_visible_pts, init_cuboid);
     % fin_param = analytical_gradient_inverse_1(cuboid, P, T*inv(A), processed_depth_map, lin_ind, sampled_visible_pts);
@@ -62,7 +62,7 @@ function print_matrix(fileID, m)
         fprintf(fileID, '\n');
     end
 end
-function record_metric(max_iou, count_num, flag)
+function record_metric(max_iou, count_num, flag, best_ratio)
     global path1 path2
     if flag == 1
         path = path1;
@@ -73,9 +73,13 @@ function record_metric(max_iou, count_num, flag)
     if count_num == 1
         f1 = fopen([path '/' 'iou.txt'],'w');
         print_matrix(f1, max_iou);
+        f2 = fopen([path '/' 'ratio.txt'],'w');
+        print_matrix(f2, best_ratio);
     else
         f1 = fopen([path '/' 'iou.txt'],'a');
         print_matrix(f1, max_iou);
+        f2 = fopen([path '/' 'ratio.txt'],'a');
+        print_matrix(f2, best_ratio);
     end
     fclose(f1);
 end
@@ -373,4 +377,36 @@ function is_visible = jude_is_first_and_second_plane_visible(cuboid, intrinsic_p
         ];
     visible_pt_label = find_visible_pt_global({cuboid}, [c1';c2'], intrinsic_params, extrinsic_params);
     is_visible = visible_pt_label(1) & visible_pt_label(2); 
+end
+function cuboid = add_transformation_matrix_to_cuboid(cuboid)
+    params = generate_cubic_params(cuboid);
+    theta = params(1); xc = params(2); yc = params(3); l = params(4); w = params(5); h = params(6);
+    for plane_ind = 1 : 2
+        if plane_ind == 1
+            pts_org = [
+                xc - 1/2 * l * cos(theta) + 1/2 * w * sin(theta);
+                yc - 1/2 * l * sin(theta) - 1/2 * w * cos(theta);
+                1/2 * h;
+                1
+                ];
+            pts_x = pts_org + [cos(theta) sin(theta) 0 0]';
+            pts_y = pts_org + [0 0 1 0]';
+            pts_z = pts_org + [sin(theta) -cos(theta) 0 0]';
+            old_pts = [pts_x';pts_y';pts_z';pts_org']; new_pts = [1 0 0 1; 0 1 0 1; 0 0 1 1;0 0 0 1;];
+            A = new_pts' * inv(old_pts'); cuboid{plane_ind}.inverse_dir_trans_matrix = A;
+        end
+        if plane_ind == 2
+            pts_org = [
+                xc + 1/2 * l * cos(theta) - 1/2 * w * sin(theta);
+                yc + 1/2 * l * sin(theta) + 1/2 * w * cos(theta);
+                1/2 * h;
+                1
+                ];
+            pts_x = pts_org + [sin(theta) -cos(theta) 0 0]';
+            pts_y = pts_org + [0 0 -1 0]';
+            pts_z = pts_org + [cos(theta) sin(theta) 0 0]';
+            old_pts = [pts_x';pts_y';pts_z';pts_org']; new_pts = [1 0 0 1; 0 1 0 1; 0 0 1 1;0 0 0 1;];
+            A = new_pts' * inv(old_pts'); cuboid{plane_ind}.inverse_dir_trans_matrix = A;
+        end
+    end
 end

@@ -1,60 +1,83 @@
-function [best_params, depth_map, space_map, stem_map, iou] = analytical_gradient_combined(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pt_3d, init_cuboid)
-    % test(cuboid);
-    % cuboid = rotate_degree_to_cuboid(cuboid, rand(1) * 2 * pi);
-    % visualize_alternate_cuboids(transfer_cuboid(cuboid))
-    % plane_ind = 2; check_plane_param(cuboid, plane_ind);
-    % params = generate_cubic_params(cuboid);
-    % linear_ind = down_sample_data(linear_ind);
-    % init_cubic = cuboid;
-    % cuboid = mutate_cuboid(cuboid);
-    % [cuboid, is_valide] = tune_cuboid(cuboid, extrinsic_param, intrinsic_param);
-    cuboid_gt = init_cuboid;
-    linear_ind_full = linear_ind; pixel_loc_init = get_pixel_loc(depth_map, linear_ind);
-    activation_label = [1 1 1 1 1 0]; activation_label = (activation_label == 1); it_num = 200; gamma = 0.00000001;
-    diff_record = zeros(it_num, 1); diff_true_record = zeros(it_num, 1); k = 1; params_record = zeros(it_num, 6);
-    % gt = get_ground_truth(depth_map, linear_ind); pixel_loc = get_pixel_loc(depth_map, linear_ind);
-    % is_right = check_grad_gt(cuboid, pixel_loc(1,:), intrinsic_param, extrinsic_param);
-    % is_right = check_grad_ft(cuboid, pixel_loc(1,:), intrinsic_param, extrinsic_param);
-    % is_right = check_grad_loss(cuboid, pixel_loc(1,:), intrinsic_param, extrinsic_param, gt(1));
-    % judge_tune_and_plane_allocation_func(cuboid, intrinsic_param, extrinsic_param, pixel_loc, depth_map, linear_ind);
-    % plane_ind_batch = ones(length(plane_ind_batch),1) * 2;
-    % plane_ind_batch = judege_plane(cuboid, intrinsic_param, extrinsic_param, pixel_loc);
-    % visualize_3d(extrinsic_param, intrinsic_param, cuboid, depth_map, linear_ind, plane_ind_batch);
-    [params, gt, pixel_loc] = make_preparation(cuboid, extrinsic_param, intrinsic_param, linear_ind, depth_map);
-    for i = 1 : it_num
-        % plane_ind_batch = judege_plane(cuboid, intrinsic_param, extrinsic_param, pixel_loc);
-        % cuboid = generate_center_cuboid_by_params(params);
-        % grad_loss = sum_grad(cuboid, pixel_loc, intrinsic_param, extrinsic_param, plane_ind_batch, gt, activation_label);
-        % delta = get_delta(cuboid, pixel_loc, gt, intrinsic_param, extrinsic_param, activation_label, plane_ind_batch);
-        % params = update_param(params, - gamma * grad_loss, activation_label);
-        
-        [plane_ind_batch, cuboid] = sub_preparation(cuboid, intrinsic_param, extrinsic_param, pixel_loc, params);
-        
-        [sum_diff1, sum_hess1] = accumulate_delta(cuboid, intrinsic_param, extrinsic_param, pixel_loc, activation_label, gt, plane_ind_batch);
-        [sum_diff2, sum_hess2] = accum_diff_and_hessian_pos(visible_pt_3d, params, extrinsic_param, intrinsic_param, activation_label, depth_map);
-        delta = get_delta_from_diff_and_hess(k*sum_diff1 + sum_diff2, k*sum_hess1 + sum_hess2, activation_label);
-        
-        diff1 = cal_loss(cuboid, pixel_loc, intrinsic_param, extrinsic_param, gt, plane_ind_batch);
-        diff2 = calculate_diff_pos(depth_map, intrinsic_param, extrinsic_param, visible_pt_3d, params);
-        diff_record(i) = diff1 + diff2;
-        
-        params = update_param(params, delta, activation_label);
-        params_record(i, :) = params;
-        if judge_stop(delta, params, diff_record)
-            break;
-        end
-        % diff_true_record(i) = diff_true;
-        % old_params = params; params = update_param(params, delta_theta, activation_label); 
-    end
-    params_record = params_record(diff_record~=0,:); diff_record = diff_record(diff_record ~= 0);
-    [best_params, depth_map, space_map, stem_map, iou] = organize_reults(params_record, cuboid_gt, intrinsic_param, extrinsic_param, depth_map, visible_pt_3d, diff_record);
-    % visualize_re(init_cuboid, resulted_cubic, intrinsic_param, extrinsic_param, depth_map);
-    % plane_ind_batch = judege_plane(cuboid, intrinsic_param, extrinsic_param, pixel_loc_init);
-    % visualize_3d(extrinsic_param, intrinsic_param, cuboid, depth_map, linear_ind_full, plane_ind_batch);
-    % figure(3); stem(diff_true_record(diff_true_record~=0), 'fill');
-    % figure(1); clf;
-    % stem(diff_record(diff_record~=0), 'fill'); 
+function [sum_diff, sum_hess, sum_loss] = visualize_combine_multi(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pt_3d, num_pos, num_inv, activation_label)
+    ratio = 1.5; activation_label = (activation_label == 1);
+    [params, gt, pixel_loc] = make_preparation(cuboid, extrinsic_param, intrinsic_param, linear_ind, depth_map); ratio_regularization = 500000;
+    pts_3d_gt = calculate_ed_pts(extrinsic_param, intrinsic_param, linear_ind, depth_map(linear_ind), size(depth_map));
+    
+    [plane_ind_batch, cuboid, selector] = sub_preparation(intrinsic_param, extrinsic_param, pixel_loc, params);
+    pixel_loc = pixel_loc(selector, :); linear_ind = linear_ind(selector); plane_ind_batch = plane_ind_batch(selector); pts_3d_gt = pts_3d_gt(selector,:);
+    
+    grad_inv_record = get_grad_inv(cuboid, intrinsic_param, extrinsic_param, pixel_loc, activation_label, gt, plane_ind_batch, num_inv);
+    x_inv_record = get_x_inv(cuboid, intrinsic_param, extrinsic_param, pixel_loc, activation_label, gt, plane_ind_batch, num_inv);
+    [grad_pos_record, x_pos_record] = get_grad_pos(visible_pt_3d, params, extrinsic_param, intrinsic_param, activation_label, depth_map, ratio, num_pos);
+    
+    diff_inv_record = get_diff_inv(cuboid, pixel_loc, intrinsic_param, extrinsic_param, gt, plane_ind_batch, num_inv);
+    diff_pos_record = get_diff_pos(depth_map, intrinsic_param, extrinsic_param, visible_pt_3d, params, ratio, num_pos);
+    visualize(cuboid, x_inv_record, x_pos_record, grad_inv_record, grad_pos_record, diff_inv_record, diff_pos_record, visible_pt_3d, intrinsic_param, extrinsic_param, plane_ind_batch, pixel_loc, activation_label, pts_3d_gt)
 end
+function pts_3d = calculate_ed_pts(extrinsic_params, intrinsic_params, linear_ind, depth, sz_depth)
+    [yy, xx] = ind2sub([sz_depth(1) sz_depth(2)], linear_ind); pixel_2d = [xx yy]; % lin_check = sub2ind(sz_depth, pixel_2d(:,2), pixel_2d(:,1));
+    tmp = [pixel_2d(:,1) .* depth, pixel_2d(:,2) .* depth, depth, ones(size(depth,1),1)];
+    pts_3d = (inv(intrinsic_params * extrinsic_params) * tmp')';
+end
+function visualize(cuboid, x_inv_record, x_pos_record, grad_inv_record, grad_pos_record, diff_inv_record, diff_pos_record, visible_pt_3d, intrinsic_param, extrinsic_param, plane_ind_batch, pixel_loc_batch, activation_label, pts_3d_gt)
+    max_ratio = 10; params_org = generate_cubic_params(cuboid); params_org_ = params_org(activation_label);
+    grad_inv_record = grad_inv_record / norm(grad_inv_record) / max_ratio;
+    grad_pos_record = grad_pos_record / norm(grad_pos_record) / max_ratio;
+    
+    params1 = repmat(params_org, [size(grad_inv_record, 1) 1]); params2 = repmat(params_org, [size(grad_pos_record, 1) 1]);
+    params1(:, activation_label) = params1(:, activation_label) + grad_inv_record; 
+    params2(:, activation_label) = params2(:, activation_label) + grad_pos_record;
+    
+    pts3_inv_change = zeros(size(grad_inv_record, 1), 4);
+    pts3_pos_change = zeros(size(grad_pos_record, 1), 4);
+    
+    for i = 1 : size(pts3_inv_change, 1)
+        pts3_inv_change(i,:) = generate_3d_pts_inv(intrinsic_param, extrinsic_param, pixel_loc_batch(i,:), plane_ind_batch(i), generate_center_cuboid_by_params(params1(i,:)));
+    end
+    
+    for i = 1 : size(pts3_pos_change, 1)
+        k = [visible_pt_3d(i,1) visible_pt_3d(i,2)]; plane_ind = visible_pt_3d(i,3);
+        pts3_pos_change(i,:) = [generate_3d_pts_pos(params2(i,:), k, plane_ind) 1];
+    end
+    
+    dir_inv = pts3_inv_change(:,1:3) - x_inv_record(:,1:3); dir_inv = dir_inv ./ repmat(vecnorm(dir_inv, 2, 2), [1 3]);
+    dir_pos = pts3_pos_change(:,1:3) - x_pos_record(:,1:3); dir_pos = dir_pos ./ repmat(vecnorm(dir_pos, 2, 2), [1 3]);
+    
+    val = [diff_inv_record; diff_pos_record]; colors = generate_cmap_array(val); pts = [x_inv_record; x_pos_record];
+    quiv_size = (val - min(val)); quiv_size = quiv_size / max(quiv_size) * 4 + 0.1; 
+    quiv_size_pos = quiv_size(1: size(dir_inv,1)); quiv_size_inv = quiv_size(size(dir_inv,1) + 1 : end);
+    figure(1); clf;
+    draw_cubic_shape_frame(cuboid); hold on;
+    scatter3(x_inv_record(:,1),x_inv_record(:,2),x_inv_record(:,3),20,'b','fill'); hold on;
+    scatter3(pts_3d_gt(:,1),pts_3d_gt(:,2),pts_3d_gt(:,3),20,'c','fill'); hold on;
+    scatter3(x_pos_record(:,1),x_pos_record(:,2),x_pos_record(:,3),20,'g','fill'); hold on;
+    for i = 1 : size(x_inv_record,1)
+        quiver3(x_inv_record(i,1),x_inv_record(i,2),x_inv_record(i,3),dir_inv(i,1),dir_inv(i,2),dir_inv(i,3),quiv_size_pos(i)); hold on;
+    end
+    for i = 1 : size(x_pos_record,1)
+        quiver3(x_pos_record(i,1),x_pos_record(i,2),x_pos_record(i,3),dir_pos(i,1),dir_pos(i,2),dir_pos(i,3),quiv_size_inv(i)); hold on;
+    end
+    for i = 1 : size(x_inv_record,1)
+        plot3([x_inv_record(i,1);pts_3d_gt(i,1)],[x_inv_record(i,2);pts_3d_gt(i,2)],[x_inv_record(i,3);pts_3d_gt(i,3)]); hold on;
+    end
+end
+function colors = generate_cmap_array(val)
+    cmap = colormap(); val = val - min(val) + 0.1;
+    colors = cmap(ceil(val / max(val) * (size(cmap,1) - 1)), :);
+end
+function pts3 = generate_3d_pts_inv(intrinsic_param, extrinsic_param, pixel_loc, plane_ind, cuboid)
+    cur_plane_param = get_plane_param(cuboid, plane_ind);
+    d = cal_depth_d(cur_plane_param, intrinsic_param, extrinsic_param, pixel_loc);
+    pts3 = cal_3d_point_x(pixel_loc, d, intrinsic_param, extrinsic_param)';
+end
+function pts3 = generate_3d_pts_pos(params, k, plane_ind)
+    pts3 = pts_3d_(params, k, plane_ind)';
+end
+function [loss, diff, grad] = regularized_term_grad_loss(ratio, activation_label)
+    loss = 0; diff = 0;
+    grad = eye(sum(activation_label)) * ratio;
+end
+%{
 function [best_cuboid, max_iou, best_params] = find_best_cuboid(params_record, cuboid_gt)
     iou_record = zeros(length(params_record), 1);
     for i = 1 : length(params_record)
@@ -65,11 +88,25 @@ function [best_cuboid, max_iou, best_params] = find_best_cuboid(params_record, c
     best_cuboid = generate_center_cuboid_by_params(params_record(ind_max,:));
     max_iou = max(iou_record); best_params = params_record(ind_max,:);
 end
+%}
+function [best_cuboid, max_iou, best_params] = find_best_cuboid(params_record, cuboid_gt, diff_record)
+    best_ind = find(diff_record == min(diff_record)); best_ind = best_ind(1);
+    best_cuboid = generate_center_cuboid_by_params(params_record(best_ind,:));
+    max_iou = calculate_IOU(cuboid_gt, best_cuboid); best_params = params_record(best_ind,:);
+end
 function [best_params, depth_map, space_map, stem_map, max_iou] = organize_reults(params_record, cuboid_gt, intrinsic_param, extrinsic_param, depth_map, visible_pt_3d, diff_record)
-    [best_cuboid, max_iou, best_params] = find_best_cuboid(params_record, cuboid_gt);
-    depth_map = visualize_re(cuboid_gt, best_cuboid, intrinsic_param, extrinsic_param, depth_map);
-    space_map = plot_scene(cuboid_gt, best_params, visible_pt_3d);
-    stem_map = plot_stem(diff_record);
+    if isempty(diff_record)
+        best_params = zeros(0);
+        depth_map = zeros(0);
+        space_map = zeros(0);
+        stem_map = zeros(0); 
+        max_iou = zeros(0);
+    else
+        [best_cuboid, max_iou, best_params] = find_best_cuboid(params_record, cuboid_gt, diff_record);
+        depth_map = visualize_re(cuboid_gt, best_cuboid, intrinsic_param, extrinsic_param, depth_map);
+        space_map = plot_scene(cuboid_gt, best_params, visible_pt_3d);
+        stem_map = plot_stem(diff_record);
+    end
 end
 function X = plot_scene(old_cuboid, params, visible_pt_3d)
     % figure(1); clf; scatter3(pts_new(:, 1), pts_new(:, 2), pts_new(:, 3), 3, 'g', 'fill'); hold on;
@@ -83,28 +120,37 @@ end
 function X = plot_stem(diff_record)
     f = figure('visible', 'off'); stem(diff_record(diff_record~=0), 'fill'); F = getframe(f); [X, Map] = frame2im(F);
 end
-function [plane_ind_batch, cuboid] = sub_preparation(cuboid, intrinsic_param, extrinsic_param, pixel_loc, params)
-    plane_ind_batch = judege_plane(cuboid, intrinsic_param, extrinsic_param, pixel_loc);
+function [plane_ind_batch, cuboid, selector] = sub_preparation(intrinsic_param, extrinsic_param, pixel_loc, params)
     cuboid = generate_center_cuboid_by_params(params);
+    cuboid = add_transformation_matrix_to_cuboid(cuboid);
+    [plane_ind_batch, selector] = judege_plane(cuboid, intrinsic_param, extrinsic_param, pixel_loc);
+    
 end
 function [params, gt, pixel_loc] = make_preparation(cuboid, extrinsic_param, intrinsic_param, linear_ind, depth_map)
-    [cuboid, is_valide] = tune_cuboid(cuboid, extrinsic_param, intrinsic_param);
-    linear_ind = down_sample_data(linear_ind);
     gt = get_ground_truth(depth_map, linear_ind); pixel_loc = get_pixel_loc(depth_map, linear_ind);
     params = generate_cubic_params(cuboid);
 end
-function [sum_diff, sum_hess] = accumulate_delta(cuboid, intrinsic_param, extrinsic_param, pixel_loc_batch, activation_label, ground_truth, plane_ind_batch)
-    
-    tot_num = size(pixel_loc_batch, 1); sum_diff = zeros(1); sum_hess = zeros(sum(activation_label));
+function x_record = get_x_inv(cuboid, intrinsic_param, extrinsic_param, pixel_loc_batch, activation_label, ground_truth, plane_ind_batch, num_inv)
+    tot_num = size(pixel_loc_batch, 1); x_record = zeros(size(pixel_loc_batch, 1), 4);
     for i = 1 : tot_num
         pixel_loc = pixel_loc_batch(i,:); plane_ind = plane_ind_batch(i);
-        grad_gt_theta = get_grad_gt_theta(cuboid, pixel_loc, intrinsic_param, extrinsic_param, plane_ind);
-        grad_ft_theta = get_grad_ft_theta(cuboid, pixel_loc, intrinsic_param, extrinsic_param, plane_ind);
+        cur_plane_param = get_plane_param(cuboid, plane_ind);
+        d = cal_depth_d(cur_plane_param, intrinsic_param, extrinsic_param, pixel_loc);
+        x_record(i, :) = cal_3d_point_x(pixel_loc, d, intrinsic_param, extrinsic_param)';
+    end
+end
+function grad_record = get_grad_inv(cuboid, intrinsic_param, extrinsic_param, pixel_loc_batch, activation_label, ground_truth, plane_ind_batch, num_inv)
+    params = generate_cubic_params(cuboid);
+    tot_num = size(pixel_loc_batch, 1); sum_diff = zeros(1); sum_hess = zeros(sum(activation_label)); sum_jacob = zeros(sum(activation_label));
+    grad_record =  zeros(size(pixel_loc_batch, 1), sum(activation_label));
+    for i = 1 : tot_num
+        pixel_loc = pixel_loc_batch(i,:); plane_ind = plane_ind_batch(i);
+        grad_gt_theta = get_grad_gt_theta(cuboid, pixel_loc, intrinsic_param, extrinsic_param, plane_ind, params);
+        grad_ft_theta = get_grad_ft_theta(cuboid, pixel_loc, intrinsic_param, extrinsic_param, plane_ind, params);
         gt = get_gt(cuboid, pixel_loc, intrinsic_param, extrinsic_param, plane_ind);
-        ft = get_ft(cuboid, pixel_loc, intrinsic_param, extrinsic_param, plane_ind);
+        ft = get_ft(cuboid, pixel_loc, intrinsic_param, extrinsic_param, plane_ind, params);
         jacob = grad_gt_theta * ft + grad_ft_theta * gt; jacob = jacob(activation_label);
-        sum_diff = sum_diff + (ground_truth(i) - gt * ft) * jacob;
-        sum_hess = sum_hess + jacob' * jacob;
+        grad_record(i, :) = jacob;
     end
 end
 function delta = get_delta_from_diff_and_hess(sum_diff, sum_hess, activation_label)
@@ -145,8 +191,11 @@ function sampled_pts = acquire_visible_sampled_points(cuboid, intrinsic_params, 
     visible_label = find_visible_pt_global({cuboid}, sampled_pts(:, 1:3), intrinsic_params, extrinsic_params);
     sampled_pts = sampled_pts(visible_label, :);
 end
-function to_stop = judge_stop(delta, params, diff)
-    th = 0.0001; to_stop = false; diff = diff(diff~=0); step_range = 10; th_hold = 10;
+function to_stop = judge_stop(delta, params, diff, stop_flag)
+    th = 0.0001; to_stop = false; diff = diff(diff~=0); step_range = 10; th_hold = 0.1;
+    if stop_flag
+        to_stop = true;
+    end
     if max(abs(delta)) < th | params(4) < 0 | params(5) < 0
         to_stop = true;
     end
@@ -283,9 +332,9 @@ function sign_rec = judge_sign(cuboid, pts_3d, plane_ind)
     pts_3d = (A * pts_3d')'; sign_rec = zeros(size(pts_3d,1),1);
     sign_rec(pts_3d(:,1)<=0) = -1; sign_rec(pts_3d(:,1)>0) = 1;
 end
-function plane_type_rec = judege_plane(cuboid, intrinsic, extrinsic, pixel_loc)
+function [plane_type_rec, selector] = judege_plane(cuboid, intrinsic, extrinsic, pixel_loc)
     % figure(1); clf;
-    params = generate_cubic_params(cuboid);
+    params = generate_cubic_params(cuboid); stop_flag = false;
     theta = params(1); xc = params(2); yc = params(3); l = params(4); w = params(5); h = params(6);
     plane_type_rec = zeros(size(pixel_loc,1),1);
     for plane_ind = 1 : 2
@@ -301,24 +350,61 @@ function plane_type_rec = judege_plane(cuboid, intrinsic, extrinsic, pixel_loc)
     for plane_ind = 1 : 2
         if plane_ind == 1
             A = get_transformation_matrix(cuboid, plane_ind);
-            % draw_cuboid(cuboid); hold on; cmap = colormap; color_map_ind = map_vector_to_colormap(x1(:,1), cmap);
-            % scatter3(x1(:,1), x1(:,2), x1(:,3), 3, cmap(color_map_ind, :), 'fill');
-            x1 = (A * x1')'; selector = x1(:,1) <= l;
+            % draw_cuboid(cuboid); hold on; cmap = colormap; color_map_ind = map_vector_to_colormap(x1_sv(:,1), cmap);
+            % scatter3(x1_sv(:,1), x1_sv(:,2), x1_sv(:,3), 3, cmap(color_map_ind, :), 'fill');
+            % x1_sv = x1;
+            x1 = (A * x1')'; selector = x1(:,1) <= l; 
             plane_type_rec(selector) = 1;
         end
         if plane_ind == 2
             A = get_transformation_matrix(cuboid, plane_ind);
-            % draw_cuboid(cuboid); hold on; cmap = colormap; color_map_ind = map_vector_to_colormap(x2(:,1), cmap);
-            % scatter3(x2(:,1), x2(:,2), x2(:,3), 3, cmap(color_map_ind, :), 'fill');
+            % draw_cuboid(cuboid); hold on; cmap = colormap; color_map_ind = map_vector_to_colormap(x2_sv(:,1), cmap);
+            % scatter3(x2_sv(:,1), x2_sv(:,2), x2_sv(:,3), 3, cmap(color_map_ind, :), 'fill');
+            % x2_sv = x2;
             x2 = (A * x2')'; selector = x2(:,1) < w;
             plane_type_rec(selector) = 2;
         end
     end
     if sum(plane_type_rec~=0) ~= length(plane_type_rec)
-        a = 1;
+        % stop_flag = true;
+        selector = (plane_type_rec~=0);
+    end
+end
+function cuboid = add_transformation_matrix_to_cuboid(cuboid)
+    params = generate_cubic_params(cuboid);
+    theta = params(1); xc = params(2); yc = params(3); l = params(4); w = params(5); h = params(6);
+    for plane_ind = 1 : 2
+        if plane_ind == 1
+            pts_org = [
+                xc - 1/2 * l * cos(theta) + 1/2 * w * sin(theta);
+                yc - 1/2 * l * sin(theta) - 1/2 * w * cos(theta);
+                1/2 * h;
+                1
+                ];
+            pts_x = pts_org + [cos(theta) sin(theta) 0 0]';
+            pts_y = pts_org + [0 0 1 0]';
+            pts_z = pts_org + [sin(theta) -cos(theta) 0 0]';
+            old_pts = [pts_x';pts_y';pts_z';pts_org']; new_pts = [1 0 0 1; 0 1 0 1; 0 0 1 1;0 0 0 1;];
+            A = new_pts' * inv(old_pts'); cuboid{plane_ind}.inverse_dir_trans_matrix = A;
+        end
+        if plane_ind == 2
+            pts_org = [
+                xc + 1/2 * l * cos(theta) - 1/2 * w * sin(theta);
+                yc + 1/2 * l * sin(theta) + 1/2 * w * cos(theta);
+                1/2 * h;
+                1
+                ];
+            pts_x = pts_org + [sin(theta) -cos(theta) 0 0]';
+            pts_y = pts_org + [0 0 -1 0]';
+            pts_z = pts_org + [cos(theta) sin(theta) 0 0]';
+            old_pts = [pts_x';pts_y';pts_z';pts_org']; new_pts = [1 0 0 1; 0 1 0 1; 0 0 1 1;0 0 0 1;];
+            A = new_pts' * inv(old_pts'); cuboid{plane_ind}.inverse_dir_trans_matrix = A;
+        end
     end
 end
 function A = get_transformation_matrix(cuboid, plane_ind)
+    A = cuboid{plane_ind}.inverse_dir_trans_matrix;
+    %{
     params = generate_cubic_params(cuboid);
     theta = params(1); xc = params(2); yc = params(3); l = params(4); w = params(5); h = params(6);
     if plane_ind == 1
@@ -345,6 +431,7 @@ function A = get_transformation_matrix(cuboid, plane_ind)
     end
     old_pts = [pts_x';pts_y';pts_z';pts_org']; new_pts = [1 0 0 1; 0 1 0 1; 0 0 1 1;0 0 0 1;];
     A = new_pts' * inv(old_pts');
+    %}
 end
 function grad_loss = sum_grad(cuboid, pixel_loc, intrinsic_param, extrinsic_param, plane_ind_batch, gt, activation_label)
     grad_loss = zeros(1, sum(activation_label));
@@ -369,11 +456,7 @@ function params = update_param(params, delta_theta, activation_label)
     params(activation_label) = params(activation_label) + delta_theta;
 end
 function delta_theta = smooth_hessian(sum_diff, sum_hessian, activation_label)
-    warning('');
     delta_theta = sum_diff * inv(sum_hessian);
-    if length(lastwarn) ~= 0
-        delta_theta = sum_diff * inv(sum_hessian + eye(sum(activation_label)) * 0.1);
-    end
 end
 function delta = get_delta(cuboid, pixel_loc_batch, ground_truth, intrinsic, extrinsic, activation_label, plane_ind_batch)
     tot_num = size(pixel_loc_batch, 1); sum_diff = zeros(1); sum_hess = zeros(sum(activation_label));
@@ -420,7 +503,7 @@ function is_right = check_grad_loss(cuboid, pixel_loc, intrinsic, extrinsic, gro
         loss2 = cal_loss_one_hoc(cur_cuboid2, pixel_loc, intrinsic, extrinsic, plane_ind, ground_truth);
         num_grad = (loss1 - loss2) / 2 / delta;
         if abs(max(abs(num_grad ./ grad_loss(:, i)) - 1))> judge_cri
-            is_right = 0;
+            is_right = 0;get_grad_loss
         end
     end
 end
@@ -444,30 +527,30 @@ function d = get_gt(cuboid, pixel_loc, intrinsic, extrinsic, plane_ind)
     cur_plane_param = get_plane_param(cuboid, plane_ind);
     d = cal_depth_d(cur_plane_param, intrinsic, extrinsic, pixel_loc);
 end
-function ft = get_ft(cuboid, pixel_loc, intrinsic, extrinsic, plane_ind)
+function ft = get_ft(cuboid, pixel_loc, intrinsic, extrinsic, plane_ind, params)
     cur_plane_param = get_plane_param(cuboid, plane_ind);
     d = cal_depth_d(cur_plane_param, intrinsic, extrinsic, pixel_loc);
     x = cal_3d_point_x(pixel_loc, d, intrinsic, extrinsic);
-    c = cal_cuboid_corner_point_c(cuboid, plane_ind);
+    c = cal_cuboid_corner_point_c(cuboid, plane_ind, params);
     t = calculate_distance_t(c, x, cuboid, plane_ind);
-    ft = cal_func_ft(cuboid, t, plane_ind);
+    ft = cal_func_ft(params, t, plane_ind);
 end
-function grad_gt_theta = get_grad_gt_theta(cuboid, pixel_loc, intrinsic, extrinsic, plane_ind)
+function grad_gt_theta = get_grad_gt_theta(cuboid, pixel_loc, intrinsic, extrinsic, plane_ind, params)
     plane_param = get_plane_param(cuboid, plane_ind);
-    ana_grad_a = get_grad_a(cuboid, plane_ind);
+    ana_grad_a = get_grad_a(cuboid, plane_ind, params);
     ana_grad_d = grad_d(plane_param, pixel_loc, intrinsic, extrinsic);
     grad_gt_theta = ana_grad_d * ana_grad_a;
 end
-function grad_ft_theta = get_grad_ft_theta(cuboid, pixel_loc, intrinsic, extrinsic, plane_ind)
+function grad_ft_theta = get_grad_ft_theta(cuboid, pixel_loc, intrinsic, extrinsic, plane_ind, params)
     plane_param = get_plane_param(cuboid, plane_ind);
-    ana_grad_a = get_grad_a(cuboid, plane_ind);
+    ana_grad_a = get_grad_a(cuboid, plane_ind, params);
     ana_grad_d = grad_d(plane_param, pixel_loc, intrinsic, extrinsic);
     grad_d_theta = ana_grad_d * ana_grad_a;
     depth = cal_depth_d(plane_param, intrinsic, extrinsic, pixel_loc);
     g_x_theta = grad_x_theta(pixel_loc, depth, intrinsic, extrinsic, grad_d_theta); x = cal_3d_point_x(pixel_loc, depth, intrinsic, extrinsic);
-    g_c_theta = grad_c(cuboid, plane_ind); c = cal_cuboid_corner_point_c(cuboid, plane_ind);
+    g_c_theta = grad_c(params, plane_ind); c = cal_cuboid_corner_point_c(cuboid, plane_ind, params);
     g_t_theta = grad_t(g_c_theta, g_x_theta, c, x, cuboid, plane_ind); t = calculate_distance_t(c, x, cuboid, plane_ind);
-    grad_ft_theta = grad_ft(cuboid, g_t_theta, t, plane_ind);
+    grad_ft_theta = grad_ft(params, g_t_theta, t, plane_ind);
 end
 function is_right = check_grad_ft(cuboid, pixel_loc, intrinsic, extrinsic, plane_ind)
     delta = 0.0000001; check_num = 5; params = generate_cubic_params(cuboid); is_right = 1; judge_cri = 0.1;
@@ -545,16 +628,16 @@ function is_right = check_grad_gt(cuboid, pixel_loc, intrinsic, extrinsic, plane
         end
     end
 end
-function grad = get_grad_a(cuboid, plane_ind)
+function grad = get_grad_a(cuboid, plane_ind, params)
     if plane_ind == 1
-        grad = get_grad_a1(cuboid);
+        grad = get_grad_a1(params);
     end
     if plane_ind == 2
-        grad = get_grad_a2(cuboid);
+        grad = get_grad_a2(params);
     end
 end
-function grad = get_grad_a1(cuboid)
-    params = generate_cubic_params(cuboid);
+function grad = get_grad_a1(params)
+    % params = generate_cubic_params(cuboid);
     theta = params(1); xc = params(2); yc = params(3); l = params(4); w = params(5); h = params(6);
     g_theta = [
         -cos(theta);
@@ -594,8 +677,8 @@ function grad = get_grad_a1(cuboid)
         ];
     grad = [g_theta g_xc g_yc g_l g_w g_h];
 end
-function grad = get_grad_a2(cuboid)
-    params = generate_cubic_params(cuboid);
+function grad = get_grad_a2(params)
+    % params = generate_cubic_params(cuboid);
     theta = params(1); xc = params(2); yc = params(3); l = params(4); w = params(5); h = params(6);
     g_theta = [
         sin(theta);
@@ -687,8 +770,8 @@ end
 function grad = grad_loss(ft, gt, A, grad_ft, grad_gt)
     grad = -2 * (A - ft * gt) * (grad_ft * gt + ft * grad_gt);
 end
-function grad = grad_ft(cuboid, grad_t_theta, t, plane_ind)
-    params = generate_cubic_params(cuboid);
+function grad = grad_ft(params, grad_t_theta, t, plane_ind)
+    % params = generate_cubic_params(cuboid);
     theta = params(1); xc = params(2); yc = params(3); l = params(4); w = params(5); h = params(6);
     if plane_ind == 1
         [ft, m] = sigmoid_func(t, l);
@@ -718,16 +801,16 @@ function grad = grad_ft(cuboid, grad_t_theta, t, plane_ind)
     end
     grad = 2 * ft * (1 - ft) * ( t * grad_cons + m / norm_length * grad_t_theta);
 end
-function grad = grad_c(cuboid, plane_ind)
+function grad = grad_c(params, plane_ind)
     if plane_ind == 1
-        grad = grad_c1(cuboid);
+        grad = grad_c1(params);
     end
     if plane_ind == 2
-        grad = grad_c2(cuboid);
+        grad = grad_c2(params);
     end
 end
-function grad = grad_c2(cuboid)
-    params = generate_cubic_params(cuboid);
+function grad = grad_c2(params)
+    % params = generate_cubic_params(cuboid);
     theta = params(1); xc = params(2); yc = params(3); l = params(4); w = params(5); h = params(6);
     g_theta = [
         - 1/2 * l * sin(theta) - 1/2 * w * cos(theta);
@@ -761,8 +844,8 @@ function grad = grad_c2(cuboid)
         ];
     grad = [g_theta g_xc g_yc g_l g_w g_h];
 end
-function grad = grad_c1(cuboid)
-    params = generate_cubic_params(cuboid);
+function grad = grad_c1(params)
+    % params = generate_cubic_params(cuboid);
     theta = params(1); xc = params(2); yc = params(3); l = params(4); w = params(5); h = params(6);
     g_theta = [
         1 / 2 * l * sin(theta) + 1 / 2 * w * cos(theta);
@@ -828,8 +911,9 @@ function grad = grad_d(plane_param, pixel_loc, intrinsic, extrinsic)
         (a' * z4) * (p1 * a' * z1 + p2 * a' * z2 + a' * z3)^(-2) * ...
         (p1 * z1' + p2 * z2' + z3');
 end
-function [diff, diff_true] = cal_loss(cuboid, pixel_loc_batch, intrinsic, extrinsic, gt_batch, plane_ind_batch)
-    diff = 0; diff_true = 0;
+function diff_inv_record = get_diff_inv(cuboid, pixel_loc_batch, intrinsic, extrinsic, gt_batch, plane_ind_batch, num_inv)
+    params = generate_cubic_params(cuboid);
+    diff_inv_record = zeros(size(pixel_loc_batch, 1), 1);
     for plane_ind = 1 : 2
         pixel_loc = pixel_loc_batch(plane_ind_batch == plane_ind, :); gt = gt_batch(plane_ind_batch == plane_ind, :);
         if isempty(gt)
@@ -839,14 +923,11 @@ function [diff, diff_true] = cal_loss(cuboid, pixel_loc_batch, intrinsic, extrin
         d = cal_depth_d(plane_param, intrinsic, extrinsic, pixel_loc);
         
         x = cal_3d_point_x(pixel_loc, d, intrinsic, extrinsic); x = x';
-        c = cal_cuboid_corner_point_c(cuboid, plane_ind);
-        try
-            t = calculate_distance_t(c, x, cuboid, plane_ind);
-        catch
-            a = 1;
-        end
-        ft = cal_func_ft(cuboid, t, plane_ind);
-        diff = diff + sum((gt - ft .* d).^2); diff_true = diff_true + sum((gt - d).^2);
+        c = cal_cuboid_corner_point_c(cuboid, plane_ind, params);
+        t = calculate_distance_t(c, x, cuboid, plane_ind);
+
+        ft = cal_func_ft(params, t, plane_ind);
+        diff_inv_record(plane_ind_batch == plane_ind) = (gt - ft .* d).^2;
         % cmap = colormap; color_map_ind = map_vector_to_colormap(ft, cmap);
         % figure(2); clf; draw_cubic_shape_frame(cuboid); hold on; scatter3(x(:,1),x(:,2),x(:,3),40,cmap(color_map_ind,:),'fill');
     end
@@ -863,8 +944,8 @@ function d = cal_depth_d(plane_param, intrinsic, extrinsic, pixel_loc)
     a = plane_param; p1 = pixel_loc(:, 1); p2 = pixel_loc(:, 2);
     d = - a' * z4 ./ (p1 * (a' * z1) + p2 * (a' * z2) + a' * z3);
 end
-function ft = cal_func_ft(cuboid, t, plane_ind)
-    params = generate_cubic_params(cuboid);
+function ft = cal_func_ft(params, t, plane_ind)
+    % params = generate_cubic_params(cuboid);
     theta = params(1); xc = params(2); yc = params(3); l = params(4); w = params(5); h = params(6);
     if plane_ind == 1
         ft = sigmoid_func(t, l);
@@ -876,9 +957,10 @@ function ft = cal_func_ft(cuboid, t, plane_ind)
     ft = 2 * (ft - 1/2);
 end
 function [sig_val, m] = sigmoid_func(t, norm_length)
-    l = norm_length;
-    m = 10; bias = 5;
-    sig_val = exp(m / l .* t + bias) ./ (exp(m / l .* t + bias) + 1);
+    l = norm_length; th_ = 20; sig_val = zeros(size(t,1), 1);
+    m = 10; bias = 5; selector = t < th_;
+    sig_val(selector) = exp(m / l .* t(selector) + bias) ./ (exp(m / l .* t(selector) + bias) + 1);
+    sig_val(~selector) = 1;
     % sig_val = 2 * (exp(m / l .* t) ./ (exp(m / l .* t) + 1) - 1/2);
 end
 function t = calculate_distance_t(c, x, cuboid, plane_ind)
@@ -907,8 +989,8 @@ function x = cal_3d_point_x(pixel_loc, d, intrinsic, extrinsic)
         z41 * p1 .* d + z42 * p2 .* d + z43 .* d + z44;
         ];
 end
-function c = cal_cuboid_corner_point_c(cuboid, plane_ind)
-    params = generate_cubic_params(cuboid);
+function c = cal_cuboid_corner_point_c(cuboid, plane_ind, params)
+    % params = generate_cubic_params(cuboid);
     theta = params(1); xc = params(2); yc = params(3); l = params(4); w = params(5); h = params(6);
     if plane_ind == 1
         c = [
@@ -930,4 +1012,364 @@ end
 function params = generate_cubic_params(cuboid)
     theta = cuboid{1}.theta; l = cuboid{1}.length1; w = cuboid{2}.length1; h = cuboid{1}.length2; center = mean(cuboid{5}.pts); xc = center(1); yc = center(2);
     params = [theta, xc, yc, l, w, h];
+end
+%%
+function [grad_pos_record, pts3_pos_record] = get_grad_pos(visible_pt_3d, params, extrinsic_param, intrinsic_param, activation_label, depth_map, ratio, num_pos)
+    k1 = visible_pt_3d(:, 1); k2 = visible_pt_3d(:, 2); plane_ind_set = visible_pt_3d(:, 3); pts_num = size(visible_pt_3d, 1);
+    grad_pos_record = zeros(size(visible_pt_3d, 1), sum(activation_label)); pts3_pos_record = zeros(size(visible_pt_3d, 1), 3);
+    for i = 1 : pts_num
+        k = [k1(i) k2(i)]; plane_ind = plane_ind_set(i);
+        [grad, diff, pts3] = get_grad_value_and_diff_(k, plane_ind, params, extrinsic_param, intrinsic_param, activation_label, depth_map);
+        grad_pos_record(i,:) = grad'; pts3_pos_record(i, :) = pts3;
+    end
+    pts3_pos_record = [pts3_pos_record ones(size(pts3_pos_record,1),1)];
+end
+function [A, diff, pts3] = get_grad_value_and_diff_(k, plane_ind, params, extrinsic_param, intrinsic_param, activation_label, depth_map)
+    M = intrinsic_param * extrinsic_param;
+    pts3 = pts_3d_(params, k, plane_ind)'; pts2 = project_point_2d(extrinsic_param, intrinsic_param, pts3); depth = M(3, :) * [pts3 1]';
+    grad_x_params = get_3d_pt_gradient_(params, k, plane_ind, activation_label);
+    grad_img = image_grad_(depth_map, pts2); grad_pixel = pixel_grad_x_(M, pts3); grad_depth = grad_dep_(M, pts3);
+    A = (grad_depth * grad_x_params - grad_img * grad_pixel * grad_x_params)';
+    diff = interpImg(depth_map, pts2) - depth;
+    % grad = grad_img * grad_pixel * grad_x_params + grad_depth * grad_x_params;
+    %{
+    is_right1 = check_grad_depth_params(grad_depth, grad_x_params, k, plane_ind, params, extrinsic_param, intrinsic_param, activation_label);
+    is_right2 = check_grad_pixel_params(grad_pixel, grad_x_params, k, plane_ind, params, extrinsic_param, intrinsic_param, activation_label);
+    if ~(is_right1 && is_right2)
+        disp('Error')
+    end
+    %}
+end
+function pts3 = pts_3d_(params, k, plane_ind)
+    theta = params(1); xc = params(2); yc = params(3);
+    l = params(4); w = params(5); h = params(6);
+    k1 = k(:,1)'; k2 = k(:,2)';
+    pts3 = zeros(3, 1);
+    if plane_ind == 1
+        pts3 = [
+            xc - 1 / 2 * l * cos(theta) + 1 / 2 * w * sin(theta) + k1 * cos(theta) * l;
+            yc - 1 / 2 * l * sin(theta) - 1 / 2 * w * cos(theta) + k1 * sin(theta) * l;
+            k2 * h
+            ];
+    end
+    if plane_ind == 2
+        pts3 = [
+            xc + 1 / 2 * l * cos(theta) + 1 / 2 * w * sin(theta) - w * k1 * sin(theta);
+            yc + 1 / 2 * l * sin(theta) - 1 / 2 * w * cos(theta) + w * k1 * cos(theta);
+            k2 * h
+            ];
+    end
+    if plane_ind == 3
+        pts3 = [
+            xc + 1 / 2 * l * cos(theta) - 1 / 2 * w * sin(theta) - k1 * l * cos(theta);
+            yc + 1 / 2 * l * sin(theta) + 1 / 2 * w * cos(theta) - k1 * l * sin(theta);
+            k2 * h
+            ];
+    end
+    if plane_ind == 4
+        pts3 = [
+            xc - 1 / 2 * l * cos(theta) - 1 / 2 * w * sin(theta) + w * k1 * sin(theta);
+            yc - 1 / 2 * l * sin(theta) + 1 / 2 * w * cos(theta) - w * k1 * cos(theta);
+            k2 * h
+            ];
+    end
+end
+function grad = get_3d_pt_gradient_(params, k, plane_ind, activation_label)
+    grad = zeros(3, 6);
+    for i = 1 : length(k)
+        if activation_label(1)
+            grad(:, 1) = g_theta_(params, k, plane_ind);
+        end
+        if activation_label(2)
+            grad(:, 2) = g_xc_(params, k, plane_ind);
+        end
+        if activation_label(3)
+            grad(:, 3) = g_yc_(params, k, plane_ind);
+        end
+        if activation_label(4)
+            grad(:, 4) = g_l_(params, k, plane_ind);
+        end
+        if activation_label(5)
+            grad(:, 5) = g_w_(params, k, plane_ind);
+        end
+        if activation_label(6)
+            grad(:, 6) = g_h_(params, k, plane_ind);
+        end
+    end
+    grad = grad(:, activation_label);
+end
+function grad = grad_dep_(M, x)
+    m3 = M(3, 1:3)';
+    grad = m3';
+end
+function grad = pixel_grad_x_(M, x)
+    m1 = M(1, :)'; m2  = M(2, :)'; m3 = M(3, :)';
+    if size(x,1) == 1
+        x = x';
+    end
+    if length(x) < 4
+        x = [x; 1];
+    end
+    gx = m1' / (m3' * x) - m3' * (m1' * x) / (m3' * x)^2; gx = gx(1:3);
+    gy = m2' / (m3' * x) - m3' * (m2' * x) / (m3' * x)^2; gy = gy(1:3);
+    grad = [gx; gy];
+end
+function grad = image_grad_(image, location)
+    x_grad = interpImg(image, [location(1) + 1, location(2)]) - interpImg(image, [location(1), location(2)]);
+    y_grad = interpImg(image, [location(1), location(2) + 1]) - interpImg(image, [location(1), location(2)]);
+    grad = [x_grad y_grad];
+end
+
+function gtheta = g_theta_(params, k, plane_ind)
+    theta = params(1); xc = params(2); yc = params(3);
+    l = params(4); w = params(5); h = params(6);
+    k1 = k(1); k2 = k(2);
+    gtheta = zeros(3, 1);
+    if plane_ind == 1
+        gtheta = [
+            1 / 2 * l * sin(theta) + 1 / 2 * w * cos(theta) - k1 * l * sin(theta);
+            -1 / 2 * l * cos(theta) + 1 / 2 * w * sin(theta) + k1 * l * cos(theta);
+            0
+            ];
+    end
+    if plane_ind == 2
+        gtheta = [
+            -1 / 2 * l * sin(theta) + 1 / 2 * w * cos(theta) - w * k1 * cos(theta);
+            1 / 2 * l * cos(theta) + 1 / 2 * w * sin(theta) - w * k1 * sin(theta);
+            0
+            ];
+    end
+    if plane_ind == 3
+        gtheta = [
+            -1 / 2 * l * sin(theta) - 1 / 2 * w * cos(theta) + k1 * l * sin(theta);
+            1 / 2 * l * cos(theta) - 1 / 2 * w * sin(theta) - k1 * l * cos(theta);
+            0
+            ];
+    end
+    if plane_ind == 4
+        gtheta = [
+            1 / 2 * l * sin(theta) - 1 / 2 * w * cos(theta) + w * k1 * cos(theta);
+            - 1 / 2 * l * cos(theta) - 1 / 2 * w * sin(theta) + w * k1 * sin(theta);
+            0
+            ];
+    end
+end
+function gxc = g_xc_(params, k, plane_ind)
+    theta = params(1); xc = params(2); yc = params(3);
+    l = params(4); w = params(5); h = params(6);
+    k1 = k(1); k2 = k(2);
+    gxc = zeros(3, 1);
+    if plane_ind == 1
+        gxc = [
+            1;
+            0;
+            0
+            ];
+    end
+    if plane_ind == 2
+        gxc = [
+            1;
+            0;
+            0
+            ];
+    end
+    if plane_ind == 3
+        gxc = [
+            1;
+            0;
+            0
+            ];
+    end
+    if plane_ind == 4
+        gxc = [
+            1;
+            0;
+            0
+            ];
+    end
+end
+function gyc = g_yc_(params, k, plane_ind)
+    theta = params(1); xc = params(2); yc = params(3);
+    l = params(4); w = params(5); h = params(6);
+    k1 = k(1); k2 = k(2);
+    gyc = zeros(3, 1);
+    if plane_ind == 1
+        gyc = [
+            0;
+            1;
+            0];
+    end
+    if plane_ind == 2
+        gyc = [
+            0;
+            1;
+            0
+            ];
+    end
+    if plane_ind == 3
+        gyc = [
+            0;
+            1;
+            0
+            ];
+    end
+    if plane_ind == 4
+        gyc = [
+            0;
+            1;
+            0
+            ];
+    end
+end
+function gl = g_l_(params, k, plane_ind)
+    theta = params(1); xc = params(2); yc = params(3);
+    l = params(4); w = params(5); h = params(6);
+    k1 = k(1); k2 = k(2);
+    gl = zeros(3, 1);
+    if plane_ind == 1
+        gl = [
+            -1 / 2 * cos(theta) + k1 * cos(theta);
+            -1 / 2 * sin(theta) + k1 * sin(theta);
+            0
+            ];
+    end
+    if plane_ind == 2
+        gl = [
+            1 / 2 * cos(theta);
+            1 / 2 * sin(theta);
+            0
+            ];
+    end
+    if plane_ind == 3
+        gl = [
+            1 / 2 * cos(theta) - k1 * cos(theta);
+            1 / 2 * sin(theta) - k1 * sin(theta);
+            0
+            ];
+    end
+    if plane_ind == 4
+        gl = [
+            - 1 / 2 * cos(theta);
+            - 1 / 2 * sin(theta);
+            0
+            ];
+    end
+end
+function gw = g_w_(params, k, plane_ind)
+    theta = params(1); xc = params(2); yc = params(3);
+    l = params(4); w = params(5); h = params(6);
+    k1 = k(1); k2 = k(2);
+    gw = zeros(3, 1);
+    if plane_ind == 1
+        gw = [
+            1 / 2 * sin(theta);
+            - 1 / 2 * cos(theta);
+            0
+            ];
+    end
+    if plane_ind == 2
+        gw = [
+            1 / 2 * sin(theta) - k1 * sin(theta);
+            -1 / 2 * cos(theta) + k1 * cos(theta);
+            0
+            ];
+    end
+    if plane_ind == 3
+        gw = [
+            -1 / 2 * sin(theta);
+            1 / 2 * cos(theta);
+            0
+            ];
+    end
+    if plane_ind == 4
+        gw = [
+            -1 / 2 * sin(theta) + k1 * sin(theta);
+            1 / 2 * cos(theta) - k1 * cos(theta);
+            0;
+            ];
+    end
+end
+function gh = g_h_(params, k, plane_ind)
+    theta = params(1); xc = params(2); yc = params(3);
+    l = params(4); w = params(5); h = params(6);
+    k1 = k(1); k2 = k(2);
+    gh = zeros(3, 1);
+    if plane_ind == 1
+        gh = [
+            0;
+            0;
+            k2
+            ];
+    end
+    if plane_ind == 2
+        gh = [
+            0;
+            0;
+            k2
+            ];
+    end
+    if plane_ind == 3
+        gh = [
+            0;
+            0;
+            k2
+            ];
+    end
+    if plane_ind == 4
+        gh = [
+            0;
+            0;
+            k2
+            ];
+    end
+end
+%%
+function diff_record_pos = get_diff_pos(depth_map, intrinsic_param, extrinsic_param, visible_pt_3d, params, ratio, num_pos)
+    M = intrinsic_param * extrinsic_param; pts3 = zeros(size(visible_pt_3d, 1), 4);
+    for i = 1 : size(pts3, 1)
+        pts3(i, :) = [(pts_3d__(params, [visible_pt_3d(i, 1) visible_pt_3d(i, 2)], visible_pt_3d(i, 3)))' 1];
+    end
+    pts2 = project_point_2d(extrinsic_param, intrinsic_param, pts3); depth = (M(3, :) * pts3')';
+    gt_depth = zeros(size(pts2, 1), 1);
+    for i = 1 : length(gt_depth)
+        gt_depth(i) = interpImg(depth_map, pts2(i,:));
+    end
+    diff_record_pos = (gt_depth - depth).^2;
+    % figure(1); clf;scatter3(pts_3d_record(:,1),pts_3d_record(:,2),pts_3d_record(:,3),3,'r','fill');hold on;axis equal;
+    % draw_cubic_shape_frame(cuboid); hold on; scatter3(pts3(:,1),pts3(:,2),pts3(:,3),3,'g','fill');
+    % show_depth_map(depth_map)
+end
+function pts3 = pts_3d__(params, k, plane_ind)
+    theta = params(1); xc = params(2); yc = params(3);
+    l = params(4); w = params(5); h = params(6);
+    k1 = k(:,1)'; k2 = k(:,2)';
+    pts3 = zeros(3, 1);
+    if plane_ind == 1
+        pts3 = [
+            xc - 1 / 2 * l * cos(theta) + 1 / 2 * w * sin(theta) + k1 * cos(theta) * l;
+            yc - 1 / 2 * l * sin(theta) - 1 / 2 * w * cos(theta) + k1 * sin(theta) * l;
+            k2 * h
+            ];
+    end
+    if plane_ind == 2
+        pts3 = [
+            xc + 1 / 2 * l * cos(theta) + 1 / 2 * w * sin(theta) - w * k1 * sin(theta);
+            yc + 1 / 2 * l * sin(theta) - 1 / 2 * w * cos(theta) + w * k1 * cos(theta);
+            k2 * h
+            ];
+    end
+    if plane_ind == 3
+        pts3 = [
+            xc + 1 / 2 * l * cos(theta) - 1 / 2 * w * sin(theta) - k1 * l * cos(theta);
+            yc + 1 / 2 * l * sin(theta) + 1 / 2 * w * cos(theta) - k1 * l * sin(theta);
+            k2 * h
+            ];
+    end
+    if plane_ind == 4
+        pts3 = [
+            xc - 1 / 2 * l * cos(theta) - 1 / 2 * w * sin(theta) + w * k1 * sin(theta);
+            yc - 1 / 2 * l * sin(theta) + 1 / 2 * w * cos(theta) - w * k1 * cos(theta);
+            k2 * h
+            ];
+    end
 end

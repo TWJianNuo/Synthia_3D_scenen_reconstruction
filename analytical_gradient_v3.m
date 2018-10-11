@@ -1,4 +1,4 @@
-function params_end = analytical_gradient_v3(cuboid, intrinsic_param, extrinsic_param, visible_pt_3d, depth_map, pts_new, projected_sampled_points)
+function params_end = analytical_gradient_v3(cuboid, intrinsic_param, extrinsic_param, depth_map, lin_ind, visible_pt_3d, init_cuboid)
     % load('supplementary_data/26_Sep_2018_15debug_ana_3.mat')
     global exp_num path;
     params = generate_cubic_params(cuboid); params_gt = params;

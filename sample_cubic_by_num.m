@@ -1,4 +1,6 @@
 function pts = sample_cubic_by_num(cuboid, num1, num2)
+    % max = 0.9; 
+    % min = 0.1;
     max = 0.9;
     min = 0.1;
     k1 = min : (max - min)/(num1 - 1) : max;

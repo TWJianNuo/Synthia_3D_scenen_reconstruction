@@ -1,7 +1,11 @@
 clear; clc;
-max_frame = 294; frame = 1; make_dir()
-[mark, extrinsic_params, intrinsic_params, depth, label, instance, rgb] = grab_provided_data(frame);
-rectangulars = get_init_guess(mark); optimize_rectangles(rectangulars, depth);
+max_frame = 294; frame = 1; s_frame = 50; e_frame = 60; instance_id = 1;
+% org_entry = read_in_org_entry(50); union_single_entry(org_entry)
+% [organized_data, depth_map_collection, rgb_collection] = do_preperation(s_frame, e_frame, instance_id);
+% cuboid_record = estimate_cubic_shape(organized_data, depth_map_collection);
+% visualize_and_save_data(cuboid_record, rgb_collection, organized_data);
+% make_dir()
+% rectangulars = get_init_guess(mark); optimize_rectangles(rectangulars, depth);
 % rectangulars = stack_sampled_pts(rectangulars);
 % draw_point_map(rectangulars);
 % rectangulars = get_init_guess(mark); rgb = render_image(rgb, rectangulars); 
@@ -14,8 +18,138 @@ rectangulars = get_init_guess(mark); optimize_rectangles(rectangulars, depth);
 % fin_params = analytical_gradient_v2(obj.cur_cuboid, intrinsic_params, extrinsic_params, visible_pt_3d, obj.depth_map, obj.new_pts);
 % objs{1}.guess(1:5) = fin_params; cx = objs{1}.guess(1); cy = objs{1}.guess(2); theta = objs{1}.guess(3); l = objs{1}.guess(4); w = objs{1}.guess(5); h = objs{1}.guess(6);
 % objs{1}.cur_cuboid = generate_cuboid_by_center(cx, cy, theta, l, w, h);
+function visualize_and_save_data(cuboid_record, rgb_collection, organized_data)
+    cuboid_record = cuboid_record(~cellfun('isempty',cuboid_record)) ;
+    path = make_dir(); selected_frame = [50]; s_frame = 50;
+    for i = 1 : length(cuboid_record)
+        cuboid = cuboid_record{i};
+        for j = 1 : length(selected_frame)
+            ind = selected_frame(j) - s_frame + 1;
+            rgb = rgb_collection{ind};
+            pts_new = organized_data{ind}.pts_new; 
+            intrinsic_params = organized_data{ind}.intrinsic_params;  
+            extrinsic_params = organized_data{ind}.extrinsic_params * inv(organized_data{ind}.affine_matrx);
+            X = plot_3d(cuboid, pts_new);
+            rgbImage = plot2d(rgb,  organized_data{ind}.linear_ind, cuboid); rgbImage = render_img(rgbImage, cuboid, intrinsic_params, extrinsic_params);
+            save_img(i, selected_frame(j), X, rgbImage, path);
+        end
+    end
+end
+function rgb = render_img(rgb, cuboid, intrinsic_params, extrinsic_params)
+    rgb = cubic_lines_of_2d(rgb, cuboid, intrinsic_params, extrinsic_params);
+end
+function save_img(ind, selected_frame, x, rgb, path)
+    imwrite(x, [path num2str(ind) '_' num2str(selected_frame) '_3d.png']);
+    imwrite(rgb, [path num2str(ind) '_' num2str(selected_frame) '_2d.png']);
+end
+function rgbImage = plot2d(rgb, linear_ind, cuboid)
+    r = rgb(:,:,1); g = rgb(:,:,2); b = rgb(:,:,3);
+    r(linear_ind) = 0; g(linear_ind) = 255; b(linear_ind) = 0;
+    rgbImage = cat(3, r, g, b); imshow(rgbImage)
+end
+function X = plot_3d(cuboid, pts_new)
+    f = figure('visible', 'off'); clf; draw_cubic_shape_frame(cuboid); hold on; scatter3(pts_new(:,1), pts_new(:,2), pts_new(:,3), 3, 'g', 'fill');
+    F = getframe(f); [X, Map] = frame2im(F);
+end
+function cuboid_record = estimate_cubic_shape(organized_data, depth_map_collection)
+    cuboid_record = cell(length(organized_data),1); num = length(organized_data);
+    for i = 1 : num
+        if i == 1
+            pts = organized_data{1}.pts_new;
+            [params, cuboid] = estimate_rectangular(pts);
+        end
+        sampled_visible_pts_set = find_visible_3d(organized_data(1:i), cuboid);
+        % visualize_the_scene(organized_data(1:i), cuboid, sampled_visible_pts_set)
+        cuboid = analytical_gradient_multiple_frame(cuboid, depth_map_collection(1:i), sampled_visible_pts_set, organized_data(1:i));
+        cuboid_record{i} = cuboid;
+    end
+end
+function visualize_the_scene(organized_data, cuboid, sampled_visible_pts_set)
+    for i = 1 : length(sampled_visible_pts_set)
+        pts = sampled_visible_pts_set{i}; pts_gt = organized_data{i}.pts_new;
+        figure(1); clf; scatter3(pts(:,1), pts(:,2), pts(:,3), 3, 'r', 'fill'); hold on; draw_cubic_shape_frame(cuboid); 
+        hold on; scatter3(pts_gt(:,1), pts_gt(:,2), pts_gt(:,3), 3, 'g', 'fill'); axis equal;
+    end 
+end
+
+
+function [organized_data, depth_map_collection, rgb_collection] = do_preperation(s_frame, e_frame, instance_id)
+    depth_map_collection = cell(e_frame - s_frame + 1, 1); prev_mark_collection = cell(e_frame - s_frame + 1, 1); rgb_collection = cell(e_frame - s_frame + 1, 1);
+    for frame = s_frame : e_frame
+        ind = frame - s_frame + 1;
+        [mark, extrinsic_params, intrinsic_params, depth, label, instance, rgb] = grab_provided_data(frame);
+        depth_map_collection{ind} = depth; prev_mark_collection{ind} = read_in_org_entry(frame);
+        rgb_collection{ind} = rgb;
+    end
+    organized_data = organize_data(s_frame, e_frame, instance_id, prev_mark_collection);
+    
+    % visualize_to_check(organized_data, depth_map_collection);
+end
+function org_entry = read_in_org_entry(frame)
+    path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/segmentation_results/21_Sep_2018_07_segmentation/Instance_map_unioned/';
+    ind = num2str(frame, '%06d');
+    loaded = load([path ind '.mat']); org_entry = loaded.prev_mark;
+end
+function sampled_visible_pts_set = find_visible_3d(organized_data, cuboid)
+    sampled_visible_pts_set = cell(length(organized_data),1);
+    for i = 1 : length(organized_data)
+        P = organized_data{i}.intrinsic_params; A = organized_data{i}.affine_matrx; T = organized_data{i}.extrinsic_params;
+        visible_pts = acquire_visible_sampled_points(cuboid, P, T, A);
+        sampled_visible_pts_set{i} = visible_pts;
+    end
+end
+function visualize_to_check(organized_data, depth_map_collection)
+    figure(1); clf;
+    for i = 1 : length(organized_data)
+        pts_new = organized_data{i}.pts_new; color = rand(1,3);
+        hold on; scatter3(pts_new(:,1), pts_new(:,2), pts_new(:,3), 3, color, 'fill');
+        project_to_depth_map(depth_map_collection{i}, organized_data{i})
+    end
+end
+function project_to_depth_map(depth_map, the_obj)
+    org_depth = depth_map;
+    extrinsic = the_obj.extrinsic_params * inv(the_obj.affine_matrx); intrinsic = the_obj.intrinsic_params; pts = the_obj.pts_new;
+    [pts_2d, depth_val] = project_point_2d(extrinsic, intrinsic, pts); pts_2d = round(pts_2d); linear_ind = sub2ind(size(depth_map), pts_2d(:,2), pts_2d(:,1));
+    depth_map(linear_ind) = depth_val; % figure(1); clf; imshow(depth_map / max(max(depth_map)));
+end
+function frame_tune_matrix = calculate_transformation_matrix(start_frame, end_frame)
+    load('adjust_matrix.mat')
+    frame_tune_matrix = eye(4);
+    for i = start_frame : end_frame - 1
+        frame_tune_matrix = frame_tune_matrix * reshape(param_record(i, :), [4 4]);
+    end
+end
+function organized_data = organize_data(s_frame, e_frame, instance_id, prev_mark_collection)
+    org_obj = choose_specific_ind(prev_mark_collection{1}, instance_id);
+    organized_data = cell(e_frame - s_frame + 1, 1); organized_data{1} = org_obj;
+    for i = s_frame + 1 : e_frame
+        ind = i - s_frame + 1;
+        frame_tune_matrix = calculate_transformation_matrix(s_frame, i);
+        the_obj = choose_specific_ind(prev_mark_collection{ind}, instance_id);
+        if isempty(the_obj)
+            break;
+        end
+        organized_data{ind} = adjust_the_obj(the_obj, org_obj, frame_tune_matrix);
+    end
+    organized_data = organized_data(~cellfun('isempty',organized_data)) ;
+end
+function the_obj = adjust_the_obj(the_obj, org_obj, frame_tune_matrix)
+    the_obj.adjust_matrix = org_obj.adjust_matrix;
+    the_obj.affine_matrx = org_obj.affine_matrx;
+    the_obj.extrinsic_params = the_obj.extrinsic_params * inv(frame_tune_matrix);
+    the_obj.pts_old = (frame_tune_matrix * the_obj.pts_old')';
+    the_obj.pts_new = (the_obj.affine_matrx * the_obj.pts_old')';
+end
+function the_obj = choose_specific_ind(mark, ind)
+    the_obj = cell(0);
+    for i = 1 : length(mark)
+        if mark{i}.instanceId == ind
+            the_obj = mark{i};
+        end
+    end
+end
 function optimize_rectangles(rectangulars, depth_map)
-    it_num = 10;
+    it_num = 100;
     for i = 1 : it_num
         optimize_cubic_shape(rectangulars{1}, depth_map, i);
     end
@@ -79,18 +213,12 @@ function record_metric(max_iou, count_num, flag)
     end
     fclose(f1);
 end
-function make_dir()
-    global path1 path2
+function path = make_dir()
     father_folder = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/cubic_shape_estimation/';
     DateString = datestr(datetime('now'));
     DateString = strrep(DateString,'-','_');DateString = strrep(DateString,' ','_');DateString = strrep(DateString,':','_'); DateString = DateString(1:14);
-    path1 = [father_folder DateString '/combined_method/'];
-    mkdir(path1);
-    father_folder = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/cubic_shape_estimation/';
-    DateString = datestr(datetime('now'));
-    DateString = strrep(DateString,'-','_');DateString = strrep(DateString,' ','_');DateString = strrep(DateString,':','_'); DateString = DateString(1:14);
-    path2 = [father_folder DateString '/forward_method/'];
-    mkdir(path2);
+    path = [father_folder DateString '/multiple_frame_based/'];
+    mkdir(path);
 end
 function cuboid = mutate_cuboid(cuboid)
     params = generate_cubic_params(cuboid);
@@ -130,8 +258,8 @@ function rectangulars = stack_sampled_pts(rectangulars)
         rectangulars{i}.visible_pts = acquire_visible_sampled_points(rectangle, intrinsic_params, extrinsic_params, affine_matrix);
     end
 end
-function sampled_pts = acquire_visible_sampled_points(rectangle, intrinsic_params, extrinsic_params, affine_matrix)
-    cuboid = rectangle.cur_cuboid; sample_pt_num = 10;
+function sampled_pts = acquire_visible_sampled_points(cuboid, intrinsic_params, extrinsic_params, affine_matrix)
+    sample_pt_num = 10;
     sampled_pts = sample_cubic_by_num(cuboid, sample_pt_num, sample_pt_num);
     extrinsic_params = extrinsic_params * inv(affine_matrix);
     visible_label = find_visible_pt_global({cuboid}, sampled_pts(:, 1:3), intrinsic_params, extrinsic_params);
@@ -152,10 +280,10 @@ function draw_point_map(rectangulars)
         scatter3(visible_sample_pts(:,1),visible_sample_pts(:,2),visible_sample_pts(:,3),3,'r','fill');
     end
 end
-function img = cubic_lines_of_2d(img, cubic, intrinsic_params, extrinsic_params, color, instance_id)
-    % color = uint8(randi([1 255], [1 3])); 
+function img = cubic_lines_of_2d(img, cubic, intrinsic_params, extrinsic_params)
+    % color = uint8(randi([1 255], [1 3]));
     % color = rand([1 3]);
-    % shapeInserter = vision.ShapeInserter('Shape', 'Lines', 'BorderColor', color);
+    shapeInserter = vision.ShapeInserter('Shape', 'Lines', 'BorderColor', 'White');
     pts3d = zeros(8,4);
     for i = 1 : 4
         pts3d(i, :) = [cubic{i}.pts(1, :) 1];
@@ -166,7 +294,7 @@ function img = cubic_lines_of_2d(img, cubic, intrinsic_params, extrinsic_params,
     pts2d = (intrinsic_params * extrinsic_params * [pts3d(:, 1:3) ones(size(pts3d,1),1)]')';
     depth = pts2d(:,3);
     pts2d(:, 1) = pts2d(:,1) ./ depth; pts2d(:,2) = pts2d(:,2) ./ depth; pts2d = round(pts2d(:,1:2));
-    lines = zeros(12, 4); 
+    lines = zeros(12, 4);
     lines(4, :) = [pts2d(4, :) pts2d(1, :)];
     lines(12, :) = [pts2d(5, :) pts2d(8, :)];
     for i = 1 : 3
@@ -179,12 +307,11 @@ function img = cubic_lines_of_2d(img, cubic, intrinsic_params, extrinsic_params,
         lines(8 + i, :) = [pts2d(i + 4, :) pts2d(i + 5, :)];
     end
     for i = 1 : 12
-        % img = step(shapeInserter, img, int32([lines(i, 1) lines(i, 2) lines(i, 3) lines(i, 4)]));
-        img = insertShape(img,'Line', int32([lines(i, 1) lines(i, 2) lines(i, 3) lines(i, 4)]), 'LineWidth', 2, 'Color', ceil(color * 254));
+        img = step(shapeInserter, img, int32([lines(i, 1) lines(i, 2) lines(i, 3) lines(i, 4)]));
+        % figure(1)
+        % imshow(img)
         % pause()
     end
-    text_position_ind = find(sum(pts2d, 2) == min(sum(pts2d, 2))); str = ['ins: ' num2str(instance_id)];
-    img = insertText(img, pts2d(text_position_ind, :) - [20 10], str, 'FontSize', 10, 'BoxColor', ceil(color * 254),'BoxOpacity',0.4,'TextColor','white');
 end
 function img = render_image(img, rectangulars)
     for i = 1 : length(rectangulars)

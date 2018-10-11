@@ -1,11 +1,35 @@
 % Get initial guess of the cubic shape
 [base_path, GT_Depth_path, GT_seg_path, GT_RGB_path, GT_Color_Label_path, cam_para_path] = get_file_storage_path();
 intrinsic_params = get_intrinsic_matrix(); init_entry_num = 20; data_cluster = cell(init_entry_num, 1); data_cluster_prop = init_data_cluster_prop();
-n = 294; exp_re_path = make_dir();
+n = 294; % exp_re_path = make_dir();
+register_parameter_matrix()
 for frame = 1 : n
     [extrinsic_params, depth, label, instance, rgb] = grab_provided_data(frame);
-    org_frame_data = read_in_org_entry(frame); [data_cluster, data_cluster_prop] = merge_obj_into_data_cluster(org_frame_data, data_cluster, data_cluster_prop);
-    save_organized_data(exp_re_path, frame, data_cluster, data_cluster_prop);
+    org_frame_data = read_in_org_entry(frame); 
+    visualize_current_data(org_frame_data);
+    % [data_cluster, data_cluster_prop] = merge_obj_into_data_cluster(org_frame_data, data_cluster, data_cluster_prop);
+    % save_organized_data(exp_re_path, frame, data_cluster, data_cluster_prop);
+end
+function register_parameter_matrix()
+    n = 294; matrix_recorder = cell(n, 4);
+    for i = 1 : n
+        org_frame_data = read_in_org_entry(n); 
+        matrix_recorder{i,1} = org_frame_data{1}.extrinsic_params;
+        matrix_recorder{i,2} = org_frame_data{1}.intrinsic_params;
+        matrix_recorder{i,3} = org_frame_data{1}.affine_matrx;
+        matrix_recorder{i,4} = org_frame_data{1}.adjust_matrix;
+        
+        % matrix_recorder(i, :) = [extrinsic_matrix(:)' intrinsic_matrix(:)' ground_tune_matrix(:)' frame_tune_matrix(:)'];
+    end
+    save(['supplementary_data/' 'matrix_recorder.mat'], 'matrix_recorder')
+end
+function visualize_current_data(org_frame_data)
+    figure(1); clf;
+    for i = 1 : length(org_frame_data)
+        cur_data_cluster = org_frame_data{i};
+        pts_new = cur_data_cluster.pts_new;
+        scatter3(pts_new(:,1),pts_new(:,2),pts_new(:,3),3,cur_data_cluster.color,'fill'); hold on;
+    end
 end
 function save_organized_data(path, frame, data_cluster, data_cluster_prop)
     if(format_check(data_cluster, data_cluster_prop))
@@ -28,7 +52,7 @@ function is_valid = format_check(data_cluster, data_cluster_prop)
     end
 end
 function org_entry = read_in_org_entry(frame)
-    path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/segmentation_results/20_Sep_2018_22_segmentation/Instance_map/';
+    path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/segmentation_results/21_Sep_2018_07_segmentation/Instance_map/';
     ind = num2str(frame, '%06d');
     loaded = load([path ind '.mat']); org_entry = loaded.prev_mark;
 end

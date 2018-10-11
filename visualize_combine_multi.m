@@ -52,13 +52,13 @@ function visualize(cuboid, x_inv_record, x_pos_record, grad_inv_record, grad_pos
     scatter3(pts_3d_gt(:,1),pts_3d_gt(:,2),pts_3d_gt(:,3),20,'c','fill'); hold on;
     scatter3(x_pos_record(:,1),x_pos_record(:,2),x_pos_record(:,3),20,'g','fill'); hold on;
     for i = 1 : size(x_inv_record,1)
-        quiver3(x_inv_record(i,1),x_inv_record(i,2),x_inv_record(i,3),dir_inv(i,1),dir_inv(i,2),dir_inv(i,3),quiv_size_pos(i)); hold on;
+        quiver3(x_inv_record(i,1),x_inv_record(i,2),x_inv_record(i,3),dir_inv(i,1),dir_inv(i,2),dir_inv(i,3),quiv_size_pos(i),'b'); hold on;
     end
     for i = 1 : size(x_pos_record,1)
-        quiver3(x_pos_record(i,1),x_pos_record(i,2),x_pos_record(i,3),dir_pos(i,1),dir_pos(i,2),dir_pos(i,3),quiv_size_inv(i)); hold on;
+        quiver3(x_pos_record(i,1),x_pos_record(i,2),x_pos_record(i,3),dir_pos(i,1),dir_pos(i,2),dir_pos(i,3),quiv_size_inv(i),'g'); hold on;
     end
     for i = 1 : size(x_inv_record,1)
-        plot3([x_inv_record(i,1);pts_3d_gt(i,1)],[x_inv_record(i,2);pts_3d_gt(i,2)],[x_inv_record(i,3);pts_3d_gt(i,3)]); hold on;
+        plot3([x_inv_record(i,1);pts_3d_gt(i,1)],[x_inv_record(i,2);pts_3d_gt(i,2)],[x_inv_record(i,3);pts_3d_gt(i,3)],'LineStyle',':','Color','k'); hold on;
     end
 end
 function colors = generate_cmap_array(val)
@@ -368,6 +368,8 @@ function [plane_type_rec, selector] = judege_plane(cuboid, intrinsic, extrinsic,
     if sum(plane_type_rec~=0) ~= length(plane_type_rec)
         % stop_flag = true;
         selector = (plane_type_rec~=0);
+    else
+        selector = true(length(plane_type_rec), 1);
     end
 end
 function cuboid = add_transformation_matrix_to_cuboid(cuboid)

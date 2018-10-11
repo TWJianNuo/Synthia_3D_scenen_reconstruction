@@ -1,7 +1,9 @@
 function [sum_diff, sum_hess, sum_loss] = analytical_gradient_combined_v2_mult_frame(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pt_3d, num_pos, num_inv, activation_label)
     ratio = 1.5; activation_label = (activation_label == 1);
-    [params, gt, pixel_loc] = make_preparation(cuboid, extrinsic_param, intrinsic_param, linear_ind, depth_map); ratio_regularization = 100000;
-
+    [params, gt, pixel_loc] = make_preparation(cuboid, extrinsic_param, intrinsic_param, linear_ind, depth_map); 
+    % ratio_regularization = 100000;
+    ratio_regularization = 100000;
+    
     [plane_ind_batch, cuboid, selector] = sub_preparation(intrinsic_param, extrinsic_param, pixel_loc, params);
     pixel_loc = pixel_loc(selector, :); linear_ind = linear_ind(selector); plane_ind_batch = plane_ind_batch(selector);
     
@@ -289,8 +291,12 @@ function [plane_type_rec, stop_flag, selector] = judege_plane(cuboid, intrinsic,
             % draw_cuboid(cuboid); hold on; cmap = colormap; color_map_ind = map_vector_to_colormap(x1_sv(:,1), cmap);
             % scatter3(x1_sv(:,1), x1_sv(:,2), x1_sv(:,3), 3, cmap(color_map_ind, :), 'fill');
             % x1_sv = x1;
+            try
             x1 = (A * x1')'; selector = x1(:,1) <= l; 
             plane_type_rec(selector) = 1;
+            catch
+                a = 1;
+            end
         end
         if plane_ind == 2
             A = get_transformation_matrix(cuboid, plane_ind);
@@ -304,6 +310,8 @@ function [plane_type_rec, stop_flag, selector] = judege_plane(cuboid, intrinsic,
     if sum(plane_type_rec~=0) ~= length(plane_type_rec)
         % stop_flag = true;
         selector = (plane_type_rec~=0);
+    else
+        selector = true(length(plane_type_rec), 1);
     end
 end
 function cuboid = add_transformation_matrix_to_cuboid(cuboid)

@@ -2,8 +2,6 @@ function IOU = calculate_IOU(cuboid_gt, cuboid_cur)
     overlap_ratio = judge_overlap_ratio(cuboid_gt, cuboid_cur);
     size_gt = get_size(cuboid_gt); size_cur = get_size(cuboid_cur);
     IOU = overlap_ratio * size_cur / (size_cur + size_gt - overlap_ratio * size_cur);
-    % draw_rectangle((A * [corner_points ones(size(corner_points, 1), 1)]')');
-    % figure(1); clf; scatter(pts_sampled_transed(:,1),pts_sampled_transed(:,2),10,'r','fill');
 end
 function overlap_ratio = judge_overlap_ratio(cuboid_gt, cuboid_cur)
     pts_sampled = sample_cubic_ground(cuboid_cur); lose_fac = 0.0001;
@@ -14,6 +12,8 @@ function overlap_ratio = judge_overlap_ratio(cuboid_gt, cuboid_cur)
     pts_sampled_transed = (A * pts_sampled')';
     selector = (pts_sampled_transed(:,1) <= l + lose_fac) & (pts_sampled_transed(:,1) >= 0 - lose_fac) & (pts_sampled_transed(:,2) <= w + lose_fac) & (pts_sampled_transed(:,2) >= 0 - lose_fac);
     overlap_ratio = sum(selector) / size(pts_sampled, 1);
+    % draw_rectangle((A * [corner_points ones(size(corner_points, 1), 1)]')');
+    % figure(1); clf; scatter(pts_sampled_transed(:,1),pts_sampled_transed(:,2),10,'r','fill');
 end
 function rect_size = get_size(cuboid)
     l = cuboid{1}.length1; w = cuboid{2}.length1;

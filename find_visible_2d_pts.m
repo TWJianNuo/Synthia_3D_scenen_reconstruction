@@ -1,4 +1,4 @@
-function [pts_2d, depth_store, pts_3d_record] = find_visible_2d_pts(cubics, pts_2d, intrinsic_params, extrinsic_params)
+function [pts_2d, depth_store, pts_3d_record, visible_pt_label] = find_visible_2d_pts(cubics, pts_2d, intrinsic_params, extrinsic_params)
     num_pt = size(pts_2d, 1); cam_origin = inv(extrinsic_params) * [0 0 0 1]';
     M = inv(intrinsic_params * extrinsic_params);
     visible_pt_label = false(num_pt, 1); deviation_threshhold = 0.00001; valid_plane_num = 4; num_obj = size(cubics, 1);

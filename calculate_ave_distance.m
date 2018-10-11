@@ -1,4 +1,4 @@
-function ave_dist = calculate_ave_distance(cuboid, pts)
+function [ave_dist, dist] = calculate_ave_distance(cuboid, pts)
     theta_ = -cuboid{1}.theta; l = cuboid{1}.length1; w = cuboid{2}.length1; h = cuboid{1}.length2; bottom_center = mean(cuboid{5}.pts);
     % pts_cpy = pts;
     

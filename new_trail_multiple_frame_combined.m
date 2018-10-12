@@ -29,21 +29,20 @@ function do_multiple_frame_based_optimization()
     global path_mul
     max_frame = 294; cubic_cluster = zeros(0);
     for frame = 1 : max_frame
-        % load('debug_10_11_new_trail_combined.mat')
         % rgb = grab_rgb_data(frame);
+        save([path_mul num2str(frame) '.mat'])
         rgb = grab_rgb_by_mat(frame);
         [data_cluster, depth_cluster] = read_in_clusters(frame);
         [data_cluster, cubic_cluster] = optimize_cubic_shape_for_data_cluster(data_cluster, depth_cluster, cubic_cluster, frame);
         metric_record = calculate_metric(cubic_cluster, data_cluster, depth_cluster);
         rgb = render_image_building(rgb, cubic_cluster, data_cluster);
         save_results(metric_record, rgb, frame);
-        save([path_mul num2str(frame) '.mat'])
         % draw_and_check_r1esults(data_cluster, cubic_cluster, frame)
     end
 end
 function rgb = grab_rgb_by_mat(frame)
     global computer_flag
-    if computer_flag
+    if computer_flag == 1
         local_path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/segmentation_results/21_Sep_2018_07_segmentation/rgb_data/';
     else
         local_path = '/Volumes/Untitled/21_Sep_2018_07_segmentation/rgb_data/';
@@ -387,7 +386,7 @@ function [cuboid, sampled_pts] = re_estimate_cubic_entry(old_cuboid, objs)
     end
     [~, new_cuboid] = estimate_rectangular(tot_pts3d);
     iou = calculate_IOU(old_cuboid, new_cuboid);
-    if iou > iou_th
+    if iou < iou_th
         cuboid_fin = new_cuboid;
     else
         cuboid_fin = old_cuboid;

@@ -26,17 +26,29 @@ do_multiple_frame_based_optimization();
 % objs{1}.guess(1:5) = fin_params; cx = objs{1}.guess(1); cy = objs{1}.guess(2); theta = objs{1}.guess(3); l = objs{1}.guess(4); w = objs{1}.guess(5); h = objs{1}.guess(6);
 % objs{1}.cur_cuboid = generate_cuboid_by_center(cx, cy, theta, l, w, h);
 function do_multiple_frame_based_optimization()
+    global path_mul
     max_frame = 294; cubic_cluster = zeros(0);
     for frame = 1 : max_frame
         % load('debug_10_11_new_trail_combined.mat')
-        rgb = grab_rgb_data(frame);
+        % rgb = grab_rgb_data(frame);
+        rgb = grab_rgb_by_mat(frame);
         [data_cluster, depth_cluster] = read_in_clusters(frame);
         [data_cluster, cubic_cluster] = optimize_cubic_shape_for_data_cluster(data_cluster, depth_cluster, cubic_cluster, frame);
         metric_record = calculate_metric(cubic_cluster, data_cluster, depth_cluster);
         rgb = render_image_building(rgb, cubic_cluster, data_cluster);
         save_results(metric_record, rgb, frame);
+        save([path_mul num2str(frame) '.mat'])
         % draw_and_check_r1esults(data_cluster, cubic_cluster, frame)
     end
+end
+function rgb = grab_rgb_by_mat(frame)
+    global computer_flag
+    if computer_flag
+        local_path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/segmentation_results/21_Sep_2018_07_segmentation/rgb_data/';
+    else
+        local_path = '/Volumes/Untitled/21_Sep_2018_07_segmentation/rgb_data/';
+    end
+    load([local_path num2str(frame) '.mat']);
 end
 function save_results(metric_record, rgb, frame)
     global path_mul
@@ -533,8 +545,13 @@ function [depth_map, pos_ind] = distill_depth_map_frame_depth_cluster(cur_obj, d
     depth_map = depth_cluster.depth_maps{pos_ind};
 end
 function [data_cluster, depth_cluster] = read_in_clusters(frame)
-    path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/segmentation_results/21_Sep_2018_07_segmentation/Instance_map_organized/';
-    holder1 = load([path num2str(frame, '%06d') '.mat']); data_cluster = holder1.data_cluster; data_cluster = correct_affine_error(data_cluster)
+    global computer_flag
+    if computer_flag == 1
+        path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/segmentation_results/21_Sep_2018_07_segmentation/Instance_map_organized/';
+    else
+        path = '/Volumes/Untitled/21_Sep_2018_07_segmentation/Instance_map_organized/';
+    end
+    holder1 = load([path num2str(frame, '%06d') '.mat']); data_cluster = holder1.data_cluster; data_cluster = correct_affine_error(data_cluster);
     holder2 = load([path num2str(frame, '%06d') '_d.mat']); depth_cluster = holder2.depth_cluster;
 end
 function data_cluster = correct_affine_error(data_cluster)
@@ -859,8 +876,13 @@ function record_metric(max_iou, count_num, flag)
     fclose(f1);
 end
 function path = make_dir()
-    global path_mul
-    father_folder = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/cubic_shape_estimation/';
+    global path_mul computer_flag
+    computer_flag = 1;
+    if computer_flag == 1
+        father_folder = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/cubic_shape_estimation/';
+    else
+        father_folder = '/Volumes/Untitled/Synthia_re/';
+    end
     DateString = datestr(datetime('now'));
     DateString = strrep(DateString,'-','_');DateString = strrep(DateString,' ','_');DateString = strrep(DateString,':','_'); DateString = DateString(1:14);
     path_mul = [father_folder DateString '_mul/'];

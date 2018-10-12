@@ -1,8 +1,8 @@
 function [sum_diff, sum_hess, sum_loss] = analytical_gradient_combined_v2_mult_frame(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pt_3d, num_pos, num_inv, activation_label)
     ratio = 1.5; activation_label = (activation_label == 1);
     [params, gt, pixel_loc] = make_preparation(cuboid, extrinsic_param, intrinsic_param, linear_ind, depth_map); 
-    % ratio_regularization = 100000;
     ratio_regularization = 100000;
+    % ratio_regularization = 10000000;
     
     [plane_ind_batch, cuboid, selector] = sub_preparation(intrinsic_param, extrinsic_param, pixel_loc, params);
     pixel_loc = pixel_loc(selector, :); linear_ind = linear_ind(selector); plane_ind_batch = plane_ind_batch(selector);
@@ -67,7 +67,7 @@ end
 function [plane_ind_batch, cuboid, selector] = sub_preparation(intrinsic_param, extrinsic_param, pixel_loc, params)
     cuboid = generate_center_cuboid_by_params(params);
     cuboid = add_transformation_matrix_to_cuboid(cuboid);
-    [plane_ind_batch, selector] = judege_plane(cuboid, intrinsic_param, extrinsic_param, pixel_loc);
+    [plane_ind_batch, stop_flag, selector] = judege_plane(cuboid, intrinsic_param, extrinsic_param, pixel_loc);
     
 end
 function [params, gt, pixel_loc] = make_preparation(cuboid, extrinsic_param, intrinsic_param, linear_ind, depth_map)
@@ -87,6 +87,9 @@ function [sum_diff, sum_hess, sum_jacob] = accum_diff_and_hessian_inv(cuboid, in
         sum_diff = sum_diff + (ground_truth(i) - gt * ft) * jacob; 
         sum_hess = sum_hess + jacob' * jacob;
         sum_jacob = sum_jacob + jacob;
+        
+        % is_right = check_grad_ft(cuboid, pixel_loc, intrinsic_param, extrinsic_param, plane_ind);
+        % is_right = check_grad_gt(cuboid, pixel_loc, intrinsic_param, extrinsic_param, plane_ind);
     end
     sum_diff = sum_diff / num_inv;
     sum_hess = sum_hess / num_inv;

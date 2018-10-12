@@ -1,11 +1,11 @@
 function [sum_diff, sum_hessian] = accum_diff_and_hessian_pos_v2(visible_pt_3d, params, extrinsic_param, intrinsic_param, activation_label, depth_map, ratio, num_pos)
     k1 = visible_pt_3d(:, 1); k2 = visible_pt_3d(:, 2); plane_ind_set = visible_pt_3d(:, 3); pts_num = size(visible_pt_3d, 1);
-    sum_diff = zeros(1, sum(activation_label)); sum_hessian = zeros(sum(activation_label)); % norm_grad_record = zeros(pts_num, 1);
+    sum_diff = zeros(1, sum(activation_label)); sum_hessian = zeros(sum(activation_label)); norm_grad_record = zeros(pts_num, 1);
     for i = 1 : pts_num
         k = [k1(i) k2(i)]; plane_ind = plane_ind_set(i);
         [grad, diff] = get_grad_value_and_diff(k, plane_ind, params, extrinsic_param, intrinsic_param, activation_label, depth_map);
         sum_diff = sum_diff + diff * grad'; sum_hessian = sum_hessian + grad * grad';
-        % norm_grad_record(i) = norm(grad);
+        norm_grad_record(
         % check_grad_x(grad_x_params, params, k, plane_ind, activation_label);
         % check_grad_pixel_x(grad_pixel, pts3, extrinsic_param, intrinsic_param);
     end
@@ -22,11 +22,11 @@ function [A, diff] = get_grad_value_and_diff(k, plane_ind, params, extrinsic_par
     diff = interpImg(depth_map, pts2) - depth;
     % grad = grad_img * grad_pixel * grad_x_params + grad_depth * grad_x_params;
     
-    % is_right1 = check_grad_depth_params(grad_depth, grad_x_params, k, plane_ind, params, extrinsic_param, intrinsic_param, activation_label);
-    % is_right2 = check_grad_pixel_params(grad_pixel, grad_x_params, k, plane_ind, params, extrinsic_param, intrinsic_param, activation_label);
-    % if ~(is_right1 && is_right2)
-    %    disp('Error')
-    % end
+    is_right1 = check_grad_depth_params(grad_depth, grad_x_params, k, plane_ind, params, extrinsic_param, intrinsic_param, activation_label);
+    is_right2 = check_grad_pixel_params(grad_pixel, grad_x_params, k, plane_ind, params, extrinsic_param, intrinsic_param, activation_label);
+    if ~(is_right1 && is_right2)
+        disp('Error')
+    end
     
 end
 function is_right = check_grad_depth_params(grad_depth_x, grad_x_params, k, plane_ind, params, extrinsic_param, intrinsic_param, activation_label)

@@ -76,8 +76,8 @@ function cubic_cluster = multiple_frame_based_optimization(data_cluster, cubic_c
 end 
 function cubic_record_entry = optimize_for_single_obj_set(cubic_record_entry, objs, depth_cluster, frame_num, obj_ind)
     global path_mul
-    save([path_mul num2str(frame_num) '_' num2str(obj_ind) '.mat'])
-    % load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/cubic_shape_estimation/single_frame_exp_record3/4_5.mat');
+    % save([path_mul num2str(frame_num) '_' num2str(obj_ind) '.mat'])
+    load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/cubic_shape_estimation/single_frame_exp_record3/4_5.mat');
     activation_label = cubic_record_entry.activation_label;
     sz_depth_map = size(depth_cluster.depth_maps{1}); it_num = 2000; loss_record = zeros(it_num, 1); cuboid_record = cell(it_num, 1);
     delta_record_norm = zeros(it_num, 1);
@@ -93,8 +93,8 @@ function cubic_record_entry = optimize_for_single_obj_set(cubic_record_entry, ob
             if sum(sum(t_counts_set)) == 0
                 break;
             end
-            for j = 1 : length(t_objs)
-            % for j = 3 : 3
+            % for j = 1 : length(t_objs)
+            for j = 3 : 3
                 if sum(t_counts_set(j,:)) == 0
                     continue;
                 end
@@ -108,7 +108,7 @@ function cubic_record_entry = optimize_for_single_obj_set(cubic_record_entry, ob
             % save_visualize(cubic_record_entry, objs, i, frame_num, obj_ind);
             cubic_record_entry = update_cuboid_entry(cubic_record_entry, delta_theta, activation_label, t_objs{1});
             if judge_stop(delta_theta, cubic_record_entry.cuboid, loss_record, delta_record_norm)
-                break;
+                %break;
             end
         else
             break
@@ -287,15 +287,15 @@ function depth_map = grab_depth_map(depth_cluster, cur_obj)
     frame_ind = cur_obj.frame;
     ind = find(depth_cluster.frame_ind == frame_ind); depth_map = depth_cluster.depth_maps{ind};
 end
-function visualize_inner_sit(cuboid, cur_obj, depth_map, visible_pts, activation_label)
+function visualize_inner_sit(cuboid, cur_obj, depth_map, visible_pts, activation_label, affine)
     tot_pos_num = size(visible_pts, 1); linear_ind = cur_obj.linear_ind; 
     
-    pts_3d = get_all_3d_pts(cur_obj, depth_map, cur_obj.affine_matrx);
+    pts_3d = get_all_3d_pts(cur_obj, depth_map, affine);
     
     tot_inv_num = size(linear_ind, 1);
     linear_ind = down_sample_linear_ind(linear_ind, tot_pos_num);
     visible_pts = [visible_pts(:, 5) visible_pts(:, 6) visible_pts(:, 4)];
-    extrinsic_param = cur_obj.extrinsic_params * inv(cur_obj.affine_matrx); intrinsic_param = cur_obj.intrinsic_params;
+    extrinsic_param = cur_obj.extrinsic_params * inv(affine); intrinsic_param = cur_obj.intrinsic_params;
     visualize_combine_multi(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pts, tot_pos_num, tot_inv_num, activation_label);
     hold on; scatter3(pts_3d(:,1), pts_3d(:,2), pts_3d(:,3), 40, 'k', 'fill')
 end
@@ -534,15 +534,8 @@ function [depth_map, pos_ind] = distill_depth_map_frame_depth_cluster(cur_obj, d
 end
 function [data_cluster, depth_cluster] = read_in_clusters(frame)
     path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/segmentation_results/21_Sep_2018_07_segmentation/Instance_map_organized/';
-    holder1 = load([path num2str(frame, '%06d') '.mat']); data_cluster = holder1.data_cluster; data_cluster = correct_affine_error(data_cluster)
+    holder1 = load([path num2str(frame, '%06d') '.mat']); data_cluster = holder1.data_cluster;
     holder2 = load([path num2str(frame, '%06d') '_d.mat']); depth_cluster = holder2.depth_cluster;
-end
-function data_cluster = correct_affine_error(data_cluster)
-    for i = 1 : length(data_cluster)
-        for j = 2 : length(data_cluster{i})
-            data_cluster{i}{j}.affine_matrx = data_cluster{i}{1}.affine_matrx;
-        end
-    end
 end
 function save_depth_cluster(frame, depth_cluster)
     path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/segmentation_results/21_Sep_2018_07_segmentation/Instance_map_organized/';

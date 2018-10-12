@@ -26,10 +26,12 @@ do_multiple_frame_based_optimization();
 % objs{1}.guess(1:5) = fin_params; cx = objs{1}.guess(1); cy = objs{1}.guess(2); theta = objs{1}.guess(3); l = objs{1}.guess(4); w = objs{1}.guess(5); h = objs{1}.guess(6);
 % objs{1}.cur_cuboid = generate_cuboid_by_center(cx, cy, theta, l, w, h);
 function do_multiple_frame_based_optimization()
+    global path_mul
     max_frame = 294; cubic_cluster = zeros(0);
     for frame = 1 : max_frame
-        % load('debug_10_11_new_trail_combined.mat')
         % rgb = grab_rgb_data(frame);
+        save([path_mul num2str(frame) '.mat'])
+        rgb = grab_rgb_by_mat(frame);
         [data_cluster, depth_cluster] = read_in_clusters(frame);
         [data_cluster, cubic_cluster] = optimize_cubic_shape_for_data_cluster(data_cluster, depth_cluster, cubic_cluster, frame);
         metric_record = calculate_metric(cubic_cluster, data_cluster, depth_cluster);
@@ -38,7 +40,14 @@ function do_multiple_frame_based_optimization()
         % draw_and_check_r1esults(data_cluster, cubic_cluster, frame)
     end
 end
-function rgb = grab_rgb_by_mat()
+function rgb = grab_rgb_by_mat(frame)
+    global computer_flag
+    if computer_flag == 1
+        local_path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/segmentation_results/21_Sep_2018_07_segmentation/rgb_data/';
+    else
+        local_path = '/Volumes/Untitled/21_Sep_2018_07_segmentation/rgb_data/';
+    end
+    load([local_path num2str(frame) '.mat']);
 end
 function save_results(metric_record, rgb, frame)
     global path_mul
@@ -306,8 +315,8 @@ function [diff, hess, loss] = accum_for_one_obj(cuboid, cur_obj, depth_map, visi
     linear_ind = down_sample_linear_ind(linear_ind, tot_pos_num);
     visible_pts = [visible_pts(:, 5) visible_pts(:, 6) visible_pts(:, 4)];
     extrinsic_param = cur_obj.extrinsic_params * inv(cur_obj.affine_matrx); intrinsic_param = cur_obj.intrinsic_params;
-    [diff, hess, loss] = analytical_gradient_combined_v2_mult_frame(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pts, tot_pos_num, tot_inv_num, activation_label);
-    % visualize_combine_multi(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pts, tot_pos_num, tot_inv_num, activation_label);
+    [diff, hess, loss] = analytical_gradient_combined_v2_mult_frame(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pts, activation_label);
+    % visualize_combine_multi(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pts, tot, activation_label);
 end
 function new_linear_ind = down_sample_linear_ind(org_linear_ind, new_num)
     if length(org_linear_ind) > new_num
@@ -377,7 +386,7 @@ function [cuboid, sampled_pts] = re_estimate_cubic_entry(old_cuboid, objs)
     end
     [~, new_cuboid] = estimate_rectangular(tot_pts3d);
     iou = calculate_IOU(old_cuboid, new_cuboid);
-    if iou > iou_th
+    if iou < iou_th
         cuboid_fin = new_cuboid;
     else
         cuboid_fin = old_cuboid;
@@ -539,7 +548,7 @@ function [data_cluster, depth_cluster] = read_in_clusters(frame)
     if computer_flag == 1
         path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/segmentation_results/21_Sep_2018_07_segmentation/Instance_map_organized/';
     else
-        path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/segmentation_results/21_Sep_2018_07_segmentation/Instance_map_organized/';
+        path = '/Volumes/Untitled/21_Sep_2018_07_segmentation/Instance_map_organized/';
     end
     holder1 = load([path num2str(frame, '%06d') '.mat']); data_cluster = holder1.data_cluster; data_cluster = correct_affine_error(data_cluster);
     holder2 = load([path num2str(frame, '%06d') '_d.mat']); depth_cluster = holder2.depth_cluster;
@@ -871,7 +880,7 @@ function path = make_dir()
     if computer_flag == 1
         father_folder = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/cubic_shape_estimation/';
     else
-        father_folder = '';
+        father_folder = '/Volumes/Untitled/Synthia_re/';
     end
     DateString = datestr(datetime('now'));
     DateString = strrep(DateString,'-','_');DateString = strrep(DateString,' ','_');DateString = strrep(DateString,':','_'); DateString = DateString(1:14);

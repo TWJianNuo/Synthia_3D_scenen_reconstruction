@@ -1,4 +1,4 @@
-function [sum_diff, sum_hess, sum_loss] = visualize_combine_multi(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pt_3d, num_pos, num_inv, activation_label)
+function [sum_diff, sum_hess, sum_loss] = visualize_combine_multi(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pt_3d, activation_label)
     ratio = 1.5; activation_label = (activation_label == 1);
     [params, gt, pixel_loc] = make_preparation(cuboid, extrinsic_param, intrinsic_param, linear_ind, depth_map); ratio_regularization = 500000;
     pts_3d_gt = calculate_ed_pts(extrinsic_param, intrinsic_param, linear_ind, depth_map(linear_ind), size(depth_map));
@@ -6,12 +6,12 @@ function [sum_diff, sum_hess, sum_loss] = visualize_combine_multi(cuboid, intrin
     [plane_ind_batch, cuboid, selector] = sub_preparation(intrinsic_param, extrinsic_param, pixel_loc, params);
     pixel_loc = pixel_loc(selector, :); linear_ind = linear_ind(selector); plane_ind_batch = plane_ind_batch(selector); pts_3d_gt = pts_3d_gt(selector,:);
     
-    grad_inv_record = get_grad_inv(cuboid, intrinsic_param, extrinsic_param, pixel_loc, activation_label, gt, plane_ind_batch, num_inv);
-    x_inv_record = get_x_inv(cuboid, intrinsic_param, extrinsic_param, pixel_loc, activation_label, gt, plane_ind_batch, num_inv);
-    [grad_pos_record, x_pos_record] = get_grad_pos(visible_pt_3d, params, extrinsic_param, intrinsic_param, activation_label, depth_map, ratio, num_pos);
+    grad_inv_record = get_grad_inv(cuboid, intrinsic_param, extrinsic_param, pixel_loc, activation_label, gt, plane_ind_batch);
+    x_inv_record = get_x_inv(cuboid, intrinsic_param, extrinsic_param, pixel_loc, activation_label, gt, plane_ind_batch);
+    [grad_pos_record, x_pos_record] = get_grad_pos(visible_pt_3d, params, extrinsic_param, intrinsic_param, activation_label, depth_map, ratio);
     
-    diff_inv_record = get_diff_inv(cuboid, pixel_loc, intrinsic_param, extrinsic_param, gt, plane_ind_batch, num_inv);
-    diff_pos_record = get_diff_pos(depth_map, intrinsic_param, extrinsic_param, visible_pt_3d, params, ratio, num_pos);
+    diff_inv_record = get_diff_inv(cuboid, pixel_loc, intrinsic_param, extrinsic_param, gt, plane_ind_batch);
+    diff_pos_record = get_diff_pos(depth_map, intrinsic_param, extrinsic_param, visible_pt_3d, params, ratio);
     visualize(cuboid, x_inv_record, x_pos_record, grad_inv_record, grad_pos_record, diff_inv_record, diff_pos_record, visible_pt_3d, intrinsic_param, extrinsic_param, plane_ind_batch, pixel_loc, activation_label, pts_3d_gt)
 end
 function pts_3d = calculate_ed_pts(extrinsic_params, intrinsic_params, linear_ind, depth, sz_depth)
@@ -130,7 +130,7 @@ function [params, gt, pixel_loc] = make_preparation(cuboid, extrinsic_param, int
     gt = get_ground_truth(depth_map, linear_ind); pixel_loc = get_pixel_loc(depth_map, linear_ind);
     params = generate_cubic_params(cuboid);
 end
-function x_record = get_x_inv(cuboid, intrinsic_param, extrinsic_param, pixel_loc_batch, activation_label, ground_truth, plane_ind_batch, num_inv)
+function x_record = get_x_inv(cuboid, intrinsic_param, extrinsic_param, pixel_loc_batch, activation_label, ground_truth, plane_ind_batch)
     tot_num = size(pixel_loc_batch, 1); x_record = zeros(size(pixel_loc_batch, 1), 4);
     for i = 1 : tot_num
         pixel_loc = pixel_loc_batch(i,:); plane_ind = plane_ind_batch(i);
@@ -139,7 +139,7 @@ function x_record = get_x_inv(cuboid, intrinsic_param, extrinsic_param, pixel_lo
         x_record(i, :) = cal_3d_point_x(pixel_loc, d, intrinsic_param, extrinsic_param)';
     end
 end
-function grad_record = get_grad_inv(cuboid, intrinsic_param, extrinsic_param, pixel_loc_batch, activation_label, ground_truth, plane_ind_batch, num_inv)
+function grad_record = get_grad_inv(cuboid, intrinsic_param, extrinsic_param, pixel_loc_batch, activation_label, ground_truth, plane_ind_batch)
     params = generate_cubic_params(cuboid);
     tot_num = size(pixel_loc_batch, 1); sum_diff = zeros(1); sum_hess = zeros(sum(activation_label)); sum_jacob = zeros(sum(activation_label));
     grad_record =  zeros(size(pixel_loc_batch, 1), sum(activation_label));
@@ -913,7 +913,7 @@ function grad = grad_d(plane_param, pixel_loc, intrinsic, extrinsic)
         (a' * z4) * (p1 * a' * z1 + p2 * a' * z2 + a' * z3)^(-2) * ...
         (p1 * z1' + p2 * z2' + z3');
 end
-function diff_inv_record = get_diff_inv(cuboid, pixel_loc_batch, intrinsic, extrinsic, gt_batch, plane_ind_batch, num_inv)
+function diff_inv_record = get_diff_inv(cuboid, pixel_loc_batch, intrinsic, extrinsic, gt_batch, plane_ind_batch)
     params = generate_cubic_params(cuboid);
     diff_inv_record = zeros(size(pixel_loc_batch, 1), 1);
     for plane_ind = 1 : 2
@@ -1016,7 +1016,7 @@ function params = generate_cubic_params(cuboid)
     params = [theta, xc, yc, l, w, h];
 end
 %%
-function [grad_pos_record, pts3_pos_record] = get_grad_pos(visible_pt_3d, params, extrinsic_param, intrinsic_param, activation_label, depth_map, ratio, num_pos)
+function [grad_pos_record, pts3_pos_record] = get_grad_pos(visible_pt_3d, params, extrinsic_param, intrinsic_param, activation_label, depth_map, ratio)
     k1 = visible_pt_3d(:, 1); k2 = visible_pt_3d(:, 2); plane_ind_set = visible_pt_3d(:, 3); pts_num = size(visible_pt_3d, 1);
     grad_pos_record = zeros(size(visible_pt_3d, 1), sum(activation_label)); pts3_pos_record = zeros(size(visible_pt_3d, 1), 3);
     for i = 1 : pts_num
@@ -1326,7 +1326,7 @@ function gh = g_h_(params, k, plane_ind)
     end
 end
 %%
-function diff_record_pos = get_diff_pos(depth_map, intrinsic_param, extrinsic_param, visible_pt_3d, params, ratio, num_pos)
+function diff_record_pos = get_diff_pos(depth_map, intrinsic_param, extrinsic_param, visible_pt_3d, params, ratio)
     M = intrinsic_param * extrinsic_param; pts3 = zeros(size(visible_pt_3d, 1), 4);
     for i = 1 : size(pts3, 1)
         pts3(i, :) = [(pts_3d__(params, [visible_pt_3d(i, 1) visible_pt_3d(i, 2)], visible_pt_3d(i, 3)))' 1];

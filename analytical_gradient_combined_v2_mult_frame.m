@@ -1,4 +1,4 @@
-function [sum_diff, sum_hess, sum_loss] = analytical_gradient_combined_v2_mult_frame(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pt_3d, num_pos, num_inv, activation_label)
+function [sum_diff, sum_hess, sum_loss] = analytical_gradient_combined_v2_mult_frame(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pt_3d, activation_label)
     ratio = 1.5; activation_label = (activation_label == 1);
     [params, gt, pixel_loc] = make_preparation(cuboid, extrinsic_param, intrinsic_param, linear_ind, depth_map); 
     ratio_regularization = 100000;
@@ -7,13 +7,13 @@ function [sum_diff, sum_hess, sum_loss] = analytical_gradient_combined_v2_mult_f
     [plane_ind_batch, cuboid, selector] = sub_preparation(intrinsic_param, extrinsic_param, pixel_loc, params);
     pixel_loc = pixel_loc(selector, :); linear_ind = linear_ind(selector); plane_ind_batch = plane_ind_batch(selector);
     
-    [sum_diff1, sum_hess1] = accum_diff_and_hessian_inv(cuboid, intrinsic_param, extrinsic_param, pixel_loc, activation_label, gt, plane_ind_batch, num_inv);
-    [sum_diff2, sum_hess2] = accum_diff_and_hessian_pos_v2(visible_pt_3d, params, extrinsic_param, intrinsic_param, activation_label, depth_map, ratio, num_pos);
+    [sum_diff1, sum_hess1] = accum_diff_and_hessian_inv(cuboid, intrinsic_param, extrinsic_param, pixel_loc, activation_label, gt, plane_ind_batch);
+    [sum_diff2, sum_hess2] = accum_diff_and_hessian_pos_v2(visible_pt_3d, params, extrinsic_param, intrinsic_param, activation_label, depth_map, ratio);
     [loss3, sum_diff3, sum_hess3] = regularized_term_grad_loss(ratio_regularization, activation_label);
 
     
-    loss1 = calculate_diff_inv(cuboid, pixel_loc, intrinsic_param, extrinsic_param, gt, plane_ind_batch, num_inv);
-    loss2 = calculate_diff_pos_v2(depth_map, intrinsic_param, extrinsic_param, visible_pt_3d, params, ratio, num_pos);
+    loss1 = calculate_diff_inv(cuboid, pixel_loc, intrinsic_param, extrinsic_param, gt, plane_ind_batch);
+    loss2 = calculate_diff_pos_v2(depth_map, intrinsic_param, extrinsic_param, visible_pt_3d, params, ratio);
     sum_diff = sum_diff1 + sum_diff2 + sum_diff3; sum_hess = sum_hess1 + sum_hess2 + sum_hess3; sum_loss = loss1 + loss2;
     
 end
@@ -74,7 +74,7 @@ function [params, gt, pixel_loc] = make_preparation(cuboid, extrinsic_param, int
     gt = get_ground_truth(depth_map, linear_ind); pixel_loc = get_pixel_loc(depth_map, linear_ind);
     params = generate_cubic_params(cuboid);
 end
-function [sum_diff, sum_hess, sum_jacob] = accum_diff_and_hessian_inv(cuboid, intrinsic_param, extrinsic_param, pixel_loc_batch, activation_label, ground_truth, plane_ind_batch, num_inv)
+function [sum_diff, sum_hess, sum_jacob] = accum_diff_and_hessian_inv(cuboid, intrinsic_param, extrinsic_param, pixel_loc_batch, activation_label, ground_truth, plane_ind_batch)
     params = generate_cubic_params(cuboid);
     tot_num = size(pixel_loc_batch, 1); sum_diff = zeros(1); sum_hess = zeros(sum(activation_label)); sum_jacob = zeros(sum(activation_label));
     for i = 1 : tot_num
@@ -87,12 +87,9 @@ function [sum_diff, sum_hess, sum_jacob] = accum_diff_and_hessian_inv(cuboid, in
         sum_diff = sum_diff + (ground_truth(i) - gt * ft) * jacob; 
         sum_hess = sum_hess + jacob' * jacob;
         sum_jacob = sum_jacob + jacob;
-        
         % is_right = check_grad_ft(cuboid, pixel_loc, intrinsic_param, extrinsic_param, plane_ind);
         % is_right = check_grad_gt(cuboid, pixel_loc, intrinsic_param, extrinsic_param, plane_ind);
     end
-    sum_diff = sum_diff / num_inv;
-    sum_hess = sum_hess / num_inv;
 end
 function delta = get_delta_from_diff_and_hess(sum_diff, sum_hess, activation_label)
     if isnan(sum_diff) | isnan(sum_hess)
@@ -858,7 +855,7 @@ function grad = grad_d(plane_param, pixel_loc, intrinsic, extrinsic)
         (a' * z4) * (p1 * a' * z1 + p2 * a' * z2 + a' * z3)^(-2) * ...
         (p1 * z1' + p2 * z2' + z3');
 end
-function [diff, diff_true] = calculate_diff_inv(cuboid, pixel_loc_batch, intrinsic, extrinsic, gt_batch, plane_ind_batch, num_inv)
+function [diff, diff_true] = calculate_diff_inv(cuboid, pixel_loc_batch, intrinsic, extrinsic, gt_batch, plane_ind_batch)
     params = generate_cubic_params(cuboid);
     diff = 0; diff_true = 0;
     for plane_ind = 1 : 2
@@ -875,7 +872,6 @@ function [diff, diff_true] = calculate_diff_inv(cuboid, pixel_loc_batch, intrins
 
         ft = cal_func_ft(params, t, plane_ind);
         diff = diff + sum((gt - ft .* d).^2); diff_true = diff_true + sum((gt - d).^2);
-        diff = diff / num_inv;
         % cmap = colormap; color_map_ind = map_vector_to_colormap(ft, cmap);
         % figure(2); clf; draw_cubic_shape_frame(cuboid); hold on; scatter3(x(:,1),x(:,2),x(:,3),40,cmap(color_map_ind,:),'fill');
     end

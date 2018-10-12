@@ -1,27 +1,20 @@
 function generate_video()
-    base_dir = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/visualize_error_boosting_and_initial_guess_results/04_Oct_2018_18/';
+    base_dir = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/cubic_shape_estimation/11_Oct_2018_21_mul/rgb_image/';
     DateString = datestr(datetime('now')); DateString = strrep(DateString,'-','_');DateString = strrep(DateString,' ','_');DateString = strrep(DateString,':','_'); DateString = DateString(1:14);
     toy_object_video = VideoWriter([base_dir '/' DateString]);
     toy_object_video.FrameRate = 6;
-    open(toy_object_video); imsize = [760 1280]; candidate = [1 45 50 100 150];
-    for i = 1 : length(candidate)
-        ind = candidate(i);
-        for j = 1 : 20
-            try
-                [~, ~, ~, ~, ~, rgb1] = grab_provided_data(ind);
-                [~, ~, ~, ~, ~, rgb2] = grab_provided_data(ind + j);
-                img3 = imread([base_dir num2str(ind) '_' num2str(j + ind) '.png']); img3 = imresize(img3, [760 1280]);
-                img4 = ones(size(img3)) * 255;
-                img = [img3 img4; rgb1 rgb2];
-                % img2 = imread([base_dir2 '_instance_label' num2str(i, '%d') '.png']);
-                % img3 = imread([base_dir 'align_situation_' num2str(i, '%d') '.png']);
-                % img1 = imresize(img1, [760, 1280]);
-                % img3 = imresize(img3, [760, 1280]);
-                % img = [img2; img1];
-                writeVideo(toy_object_video, img)
-            catch
-                continue;
-            end
+    open(toy_object_video); imsize = [760 1280]; num = 85;
+    for j = 1 : num
+        try
+            img = imread([base_dir num2str(j) '.png']);
+            % img2 = imread([base_dir2 '_instance_label' num2str(i, '%d') '.png']);
+            % img3 = imread([base_dir 'align_situation_' num2str(i, '%d') '.png']);
+            % img1 = imresize(img1, [760, 1280]);
+            % img3 = imresize(img3, [760, 1280]);
+            % img = [img2; img1];
+            writeVideo(toy_object_video, img)
+        catch
+            continue;
         end
     end
 end

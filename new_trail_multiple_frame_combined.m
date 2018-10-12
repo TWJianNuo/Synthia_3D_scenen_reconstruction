@@ -10,7 +10,6 @@ do_multiple_frame_based_optimization();
 % [organized_data, depth_map_collection, rgb_collection] = do_preperation(s_frame, e_frame, instance_id);
 % cuboid_record = estimate_cubic_shape(organized_data, depth_map_collection);
 % visualize_and_save_data(cuboid_record, rgb_collection, organized_data);
-
 % make_dir()
 % rectangulars = get_init_guess(mark); optimize_rectangles(rectangulars, depth);
 % rectangulars = stack_sampled_pts(rectangulars);
@@ -315,8 +314,8 @@ function [diff, hess, loss] = accum_for_one_obj(cuboid, cur_obj, depth_map, visi
     linear_ind = down_sample_linear_ind(linear_ind, tot_pos_num);
     visible_pts = [visible_pts(:, 5) visible_pts(:, 6) visible_pts(:, 4)];
     extrinsic_param = cur_obj.extrinsic_params * inv(cur_obj.affine_matrx); intrinsic_param = cur_obj.intrinsic_params;
-    [diff, hess, loss] = analytical_gradient_combined_v2_mult_frame(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pts, tot_pos_num, tot_inv_num, activation_label);
-    % visualize_combine_multi(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pts, tot_pos_num, tot_inv_num, activation_label);
+    [diff, hess, loss] = analytical_gradient_combined_v2_mult_frame(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pts, activation_label);
+    % visualize_combine_multi(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pts, activation_label);
 end
 function new_linear_ind = down_sample_linear_ind(org_linear_ind, new_num)
     if length(org_linear_ind) > new_num

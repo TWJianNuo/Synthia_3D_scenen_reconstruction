@@ -1,4 +1,4 @@
-function [sum_diff, sum_hessian] = accum_diff_and_hessian_pos_v2(visible_pt_3d, params, extrinsic_param, intrinsic_param, activation_label, depth_map, ratio, num_pos)
+function [sum_diff, sum_hessian] = accum_diff_and_hessian_pos_v2(visible_pt_3d, params, extrinsic_param, intrinsic_param, activation_label, depth_map, ratio)
     k1 = visible_pt_3d(:, 1); k2 = visible_pt_3d(:, 2); plane_ind_set = visible_pt_3d(:, 3); pts_num = size(visible_pt_3d, 1);
     sum_diff = zeros(1, sum(activation_label)); sum_hessian = zeros(sum(activation_label)); % norm_grad_record = zeros(pts_num, 1);
     for i = 1 : pts_num
@@ -10,7 +10,6 @@ function [sum_diff, sum_hessian] = accum_diff_and_hessian_pos_v2(visible_pt_3d, 
         % check_grad_pixel_x(grad_pixel, pts3, extrinsic_param, intrinsic_param);
     end
     sum_diff = sum_diff * ratio; sum_hessian = sum_hessian * ratio;
-    sum_diff = sum_diff / num_pos; sum_hessian = sum_hessian / num_pos;
     % delta_theta = smooth_hessian(sum_diff, sum_hessian, activation_label);
 end
 function [A, diff] = get_grad_value_and_diff(k, plane_ind, params, extrinsic_param, intrinsic_param, activation_label, depth_map)

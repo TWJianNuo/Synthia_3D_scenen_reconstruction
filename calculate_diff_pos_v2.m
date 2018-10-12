@@ -1,4 +1,4 @@
-function diff = calculate_diff_pos_v2(depth_map, intrinsic_param, extrinsic_param, visible_pt_3d, params, ratio, num_pos)
+function diff = calculate_diff_pos_v2(depth_map, intrinsic_param, extrinsic_param, visible_pt_3d, params, ratio)
     M = intrinsic_param * extrinsic_param; pts3 = zeros(size(visible_pt_3d, 1), 4);
     for i = 1 : size(pts3, 1)
         pts3(i, :) = [(pts_3d(params, [visible_pt_3d(i, 1) visible_pt_3d(i, 2)], visible_pt_3d(i, 3)))' 1];
@@ -8,7 +8,7 @@ function diff = calculate_diff_pos_v2(depth_map, intrinsic_param, extrinsic_para
     for i = 1 : length(gt_depth)
         gt_depth(i) = interpImg(depth_map, pts2(i,:));
     end
-    diff = sum((gt_depth - depth).^2); diff = diff * ratio; diff = diff / num_pos;
+    diff = sum((gt_depth - depth).^2); diff = diff * ratio;
     % figure(1); clf;scatter3(pts_3d_record(:,1),pts_3d_record(:,2),pts_3d_record(:,3),3,'r','fill');hold on;axis equal;
     % draw_cubic_shape_frame(cuboid); hold on; scatter3(pts3(:,1),pts3(:,2),pts3(:,3),3,'g','fill');
     % show_depth_map(depth_map)

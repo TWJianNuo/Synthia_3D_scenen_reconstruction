@@ -1,8 +1,8 @@
 function [sum_diff, sum_hess, sum_loss] = analytical_gradient_combined_v2_mult_frame(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pt_3d, activation_label)
     ratio = 1.5; activation_label = (activation_label == 1);
     [params, gt, pixel_loc] = make_preparation(cuboid, extrinsic_param, intrinsic_param, linear_ind, depth_map); 
-    ratio_regularization = 100000;
-    % ratio_regularization = 10000000;
+    % ratio_regularization = 100000;
+    ratio_regularization = 10000000;
     
     [plane_ind_batch, cuboid, selector] = sub_preparation(intrinsic_param, extrinsic_param, pixel_loc, params);
     pixel_loc = pixel_loc(selector, :); linear_ind = linear_ind(selector); plane_ind_batch = plane_ind_batch(selector);

@@ -87,16 +87,15 @@ end
 function cubic_record_entry = optimize_for_single_obj_set(cubic_record_entry, objs, depth_cluster, frame_num, obj_ind)
     global path_mul
     % save([path_mul num2str(frame_num) '_' num2str(obj_ind) '.mat'])
-    load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/cubic_shape_estimation/12_Oct_2018_13_mul/1_8.mat');
+    load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/cubic_shape_estimation/12_Oct_2018_13_mul/1_7.mat');
     activation_label = cubic_record_entry.activation_label;
-    sz_depth_map = size(depth_cluster.depth_maps{1}); it_num = 2000; loss_record = zeros(it_num, 1); cuboid_record = cell(it_num, 1);
+    sz_depth_map = size(depth_cluster.depth_maps{1}); it_num = 500; loss_record = zeros(it_num, 1); cuboid_record = cell(it_num, 1);
     delta_record_norm = zeros(it_num, 1);
     for i = 1 : it_num
         cuboid = cubic_record_entry.cuboid; visible_pts = cubic_record_entry.visible_pts;
         is_visible_record = get_visible_objs(cuboid, objs); t_objs = objs(is_visible_record);
         if i == 1
-            counts_set = get_useable_sample_for_obj_cluster(objs, sz_depth_map, visible_pts);
-            % t_counts_set = exclude_border_points(visible_pts(t_counts_set(j,:), :), t_objs{j}.extrinsic_params, t_objs{j}.intrinsic_params, t_objs{j}.affine_matrx, depth_map, t_counts_set);
+            counts_set = get_useable_sample_for_obj_cluster(objs, depth_cluster, visible_pts);
         end
         if ~isempty(t_objs)
             diff_sum = 0; hess_sum = 0; loss_sum = 0;
@@ -118,7 +117,7 @@ function cubic_record_entry = optimize_for_single_obj_set(cubic_record_entry, ob
             % save_visualize(cubic_record_entry, objs, i, frame_num, obj_ind);
             cubic_record_entry = update_cuboid_entry(cubic_record_entry, delta_theta, activation_label, t_objs{1});
             if judge_stop(delta_theta, cubic_record_entry.cuboid, loss_record, delta_record_norm)
-                break;
+                % break;
             end
         else
             break
@@ -130,14 +129,7 @@ function cubic_record_entry = optimize_for_single_obj_set(cubic_record_entry, ob
         figure(1); clf; stem(loss_record,'filled')
     end
 end
-function t_counts_set = exclude_border_points(pts_3d, extrinsic, intrinsic, affine, image, t_counts_set)
-    grad_record = zeros(size(pts_3d,1),2); grad_th = 100;
-    location = round(project_point_2d(extrinsic, intrinsic, pts_3d(:,1:3), affine));
-    for i = 1 : size(location,1)
-        grad_record(i,:) = abs([interpImg(image, [location(i,1) + 1, location(i,2)]) - interpImg(image, [location(i,1), location(i,2)]), interpImg(image, [location(i,1), location(i,2) + 1]) - interpImg(image, [location(i,1), location(i,2)])]);
-    end
-    selector = (grad_record(:,1) < grad_th) & (grad_record(:,2) < grad_th); t_counts_set(t_counts_set) = selector;
-end
+
 function metric_record = calculate_metric(cuboid_cluster, objs_cluster, depth_map_cluster)
     metric_record = zeros(length(cuboid_cluster), 2);
     for i = 1 : length(cuboid_cluster)
@@ -251,7 +243,7 @@ function save_stem(loss_record, frame_num, obj_ind)
     imwrite(X, [path_mul num2str(frame_num) '_' num2str(obj_ind) '_loss' '.png']);
 end
 function save_visualize(cubic_record_entry, objs, it_num, frame_num, obj_ind)
-    global path_mul
+    global path_mul axis_param_vi
     if mod(it_num, 1) == 0
         figure('visible', 'off'); clf; draw_cubic_shape_frame(cubic_record_entry.cuboid); hold on;
         pts_cubic = cubic_record_entry.visible_pts;
@@ -261,6 +253,15 @@ function save_visualize(cubic_record_entry, objs, it_num, frame_num, obj_ind)
             scatter3(pts(:,1), pts(:,2), pts(:,3), 3, 'g', 'fill'); hold on;
         end
         axis equal; F = getframe(gcf); [X, ~] = frame2im(F);
+        %{
+        if it_num == 1
+            [az,el] = view; limit = axis;
+            axis_param_vi = [az,el,limit];
+        else
+            view(axis_param_vi(1:2));
+            axis(axis_param_vi(3:end));
+        end
+        %}
         % path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/cubic_shape_estimation/single_frame_exp/';
         imwrite(X, [path_mul num2str(frame_num) '_' num2str(obj_ind) '_' num2str(it_num) '.png']); pause(1)
     end
@@ -315,7 +316,8 @@ function visualize_inner_sit(cuboid, cur_obj, depth_map, visible_pts, activation
     extrinsic_param = cur_obj.extrinsic_params * inv(cur_obj.affine_matrx); intrinsic_param = cur_obj.intrinsic_params;
     color1 = rand(size(linear_ind,1),3); color2 = rand(size(visible_pts,1),3);
     
-    [x_inv_record, dominate_pts, dominate_color] = visualize_combine_multi(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pts, activation_label, color1, color2);
+    % [x_inv_record, dominate_pts, dominate_color] = visualize_combine_multi(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pts, activation_label, color1, color2);
+    [x_inv_record, dominate_pts, dominate_color] = visualize_combine_multi(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pts, activation_label);
     [depth_map_projected] = map_pts_to_depth_map(cur_obj.extrinsic_params, cur_obj.intrinsic_params, cur_obj.affine_matrx, dominate_pts, depth_map, dominate_color);
     % hold on; scatter3(pts_3d(:,1), pts_3d(:,2), pts_3d(:,3), 4, 'k', 'fill');
     figure(2); clf; imshow(depth_map_projected)
@@ -357,10 +359,12 @@ function is_visible_record = get_visible_objs(cuboid, objs)
         is_visible_record(i) = judge_is_still_visible(cuboid, objs{i});
     end
 end
-function counts_set = get_useable_sample_for_obj_cluster(objs, sz_depth_map, visible_pts)
-    counts_set = false(size(objs, 1), size(visible_pts,1));
+function counts_set = get_useable_sample_for_obj_cluster(objs, depth_cluster, visible_pts)
+    counts_set = false(size(objs, 1), size(visible_pts,1)); sz_depth_map = size(depth_cluster.depth_maps{1});
     for i = 1 : length(objs)
         counts_set(i,:) = get_useable_sample_pt(objs{i}, sz_depth_map, visible_pts);
+        [depth_map, ~] = distill_depth_map_frame_depth_cluster(objs{i}, depth_cluster);
+        counts_set(i,:) = counts_set(i,:) & exclude_border_points(visible_pts, objs{i}, depth_map)';
     end
     %{
     re = ~counts_set(1,:);
@@ -372,6 +376,15 @@ function counts_set = get_useable_sample_for_obj_cluster(objs, sz_depth_map, vis
         counts_set(i, :) = tmp;
     end
     %}
+end
+function selector = exclude_border_points(visible_pts, obj, image)
+    grad_record = zeros(size(visible_pts,1),2); grad_th = 100; 
+    extrinsic = obj.extrinsic_params; intrinsic = obj.intrinsic_params; affine = obj.affine_matrx;
+    location = round(project_point_2d(extrinsic, intrinsic, visible_pts(:,1:3), affine));
+    for i = 1 : size(location,1)
+        grad_record(i,:) = abs([interpImg(image, [location(i,1) + 1, location(i,2)]) - interpImg(image, [location(i,1), location(i,2)]), interpImg(image, [location(i,1), location(i,2) + 1]) - interpImg(image, [location(i,1), location(i,2)])]);
+    end
+    selector = (grad_record(:,1) < grad_th) & (grad_record(:,2) < grad_th);
 end
 function counts = get_useable_sample_pt(cur_obj, sz_depth_map, visible_pts)
     extrinsic = cur_obj.extrinsic_params * inv(cur_obj.affine_matrx); intrinsic = cur_obj.intrinsic_params; height = sz_depth_map(1); width = sz_depth_map(2);

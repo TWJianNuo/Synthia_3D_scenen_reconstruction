@@ -86,10 +86,10 @@ function cubic_cluster = multiple_frame_based_optimization(data_cluster, cubic_c
 end 
 function cubic_record_entry = optimize_for_single_obj_set(cubic_record_entry, objs, depth_cluster, frame_num, obj_ind)
     global path_mul
-    % save([path_mul num2str(frame_num) '_' num2str(obj_ind) '.mat'])
-    load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/cubic_shape_estimation/12_Oct_2018_13_mul/1_7.mat');
-    activation_label = cubic_record_entry.activation_label;
-    sz_depth_map = size(depth_cluster.depth_maps{1}); it_num = 500; loss_record = zeros(it_num, 1); cuboid_record = cell(it_num, 1);
+    save([path_mul num2str(frame_num) '_' num2str(obj_ind) '.mat'])
+    % load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/cubic_shape_estimation/13_Oct_2018_15_mul/1_8.mat');
+    activation_label = cubic_record_entry.activation_label; depth_cluster = image_blur(depth_cluster);
+    sz_depth_map = size(depth_cluster.depth_maps{1}); it_num = 200; loss_record = zeros(it_num, 1); cuboid_record = cell(it_num, 1);
     delta_record_norm = zeros(it_num, 1);
     for i = 1 : it_num
         cuboid = cubic_record_entry.cuboid; visible_pts = cubic_record_entry.visible_pts;
@@ -129,7 +129,11 @@ function cubic_record_entry = optimize_for_single_obj_set(cubic_record_entry, ob
         figure(1); clf; stem(loss_record,'filled')
     end
 end
-
+function depth_map_cluster = image_blur(depth_map_cluster)
+    for i = 1 : length(depth_map_cluster)
+        depth_map_cluster.depth_maps{i} = imgaussfilt(depth_map_cluster.depth_maps{i},'FilterSize',3);
+    end
+end
 function metric_record = calculate_metric(cuboid_cluster, objs_cluster, depth_map_cluster)
     metric_record = zeros(length(cuboid_cluster), 2);
     for i = 1 : length(cuboid_cluster)

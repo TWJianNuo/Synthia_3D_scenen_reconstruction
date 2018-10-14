@@ -1,18 +1,23 @@
-function [sum_diff, sum_hess, sum_loss] = analytical_gradient_combined_v2_mult_frame(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pt_3d, num_pos, num_inv, activation_label)
+function [sum_diff, sum_hess, sum_loss] = analytical_gradient_combined_v2_mult_frame(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pt_3d, activation_label)
+    global sigmoid_m sigmoid_bias
+    sigmoid_m = 10; sigmoid_bias = 4;
     ratio = 1.5; activation_label = (activation_label == 1);
-    [params, gt, pixel_loc] = make_preparation(cuboid, extrinsic_param, intrinsic_param, linear_ind, depth_map); ratio_regularization = 500000;
-
-    [plane_ind_batch, cuboid, stop_flag] = sub_preparation(intrinsic_param, extrinsic_param, pixel_loc, params);
+    [params, gt, pixel_loc] = make_preparation(cuboid, extrinsic_param, intrinsic_param, linear_ind, depth_map); 
+    % ratio_regularization = 100000;
+    ratio_regularization = 10000000;
     
-    [sum_diff1, sum_hess1] = accum_diff_and_hessian_inv(cuboid, intrinsic_param, extrinsic_param, pixel_loc, activation_label, gt, plane_ind_batch, num_inv);
-    [sum_diff2, sum_hess2] = accum_diff_and_hessian_pos_v2(visible_pt_3d, params, extrinsic_param, intrinsic_param, activation_label, depth_map, ratio, num_pos);
+    [plane_ind_batch, cuboid, selector] = sub_preparation(intrinsic_param, extrinsic_param, pixel_loc, params);
+    pixel_loc = pixel_loc(selector, :); linear_ind = linear_ind(selector); plane_ind_batch = plane_ind_batch(selector);
+    
+    [sum_diff1, sum_hess1] = accum_diff_and_hessian_inv(cuboid, intrinsic_param, extrinsic_param, pixel_loc, activation_label, gt, plane_ind_batch);
+    [sum_diff2, sum_hess2] = accum_diff_and_hessian_pos_v2(visible_pt_3d, params, extrinsic_param, intrinsic_param, activation_label, depth_map, ratio);
     [loss3, sum_diff3, sum_hess3] = regularized_term_grad_loss(ratio_regularization, activation_label);
 
     
-    loss1 = calculate_diff_inv(cuboid, pixel_loc, intrinsic_param, extrinsic_param, gt, plane_ind_batch, num_inv);
-    loss2 = calculate_diff_pos_v2(depth_map, intrinsic_param, extrinsic_param, visible_pt_3d, params, ratio, num_pos);
+    loss1 = calculate_diff_inv(cuboid, pixel_loc, intrinsic_param, extrinsic_param, gt, plane_ind_batch);
+    loss2 = calculate_diff_pos_v2(depth_map, intrinsic_param, extrinsic_param, visible_pt_3d, params, ratio);
     sum_diff = sum_diff1 + sum_diff2 + sum_diff3; sum_hess = sum_hess1 + sum_hess2 + sum_hess3; sum_loss = loss1 + loss2;
-    
+    % sum_diff = sum_diff1 + 0 + sum_diff3; sum_hess = sum_hess1 + 0 + sum_hess3; sum_loss = loss1 + 0;
 end
 function [loss, diff, grad] = regularized_term_grad_loss(ratio, activation_label)
     loss = 0; diff = 0;
@@ -61,17 +66,17 @@ end
 function X = plot_stem(diff_record)
     f = figure('visible', 'off'); stem(diff_record(diff_record~=0), 'fill'); F = getframe(f); [X, Map] = frame2im(F);
 end
-function [plane_ind_batch, cuboid, stop_flag] = sub_preparation(intrinsic_param, extrinsic_param, pixel_loc, params)
+function [plane_ind_batch, cuboid, selector] = sub_preparation(intrinsic_param, extrinsic_param, pixel_loc, params)
     cuboid = generate_center_cuboid_by_params(params);
     cuboid = add_transformation_matrix_to_cuboid(cuboid);
-    [plane_ind_batch, stop_flag] = judege_plane(cuboid, intrinsic_param, extrinsic_param, pixel_loc);
+    [plane_ind_batch, stop_flag, selector] = judege_plane(cuboid, intrinsic_param, extrinsic_param, pixel_loc);
     
 end
 function [params, gt, pixel_loc] = make_preparation(cuboid, extrinsic_param, intrinsic_param, linear_ind, depth_map)
     gt = get_ground_truth(depth_map, linear_ind); pixel_loc = get_pixel_loc(depth_map, linear_ind);
     params = generate_cubic_params(cuboid);
 end
-function [sum_diff, sum_hess, sum_jacob] = accum_diff_and_hessian_inv(cuboid, intrinsic_param, extrinsic_param, pixel_loc_batch, activation_label, ground_truth, plane_ind_batch, num_inv)
+function [sum_diff, sum_hess, sum_jacob] = accum_diff_and_hessian_inv(cuboid, intrinsic_param, extrinsic_param, pixel_loc_batch, activation_label, ground_truth, plane_ind_batch)
     params = generate_cubic_params(cuboid);
     tot_num = size(pixel_loc_batch, 1); sum_diff = zeros(1); sum_hess = zeros(sum(activation_label)); sum_jacob = zeros(sum(activation_label));
     for i = 1 : tot_num
@@ -84,9 +89,9 @@ function [sum_diff, sum_hess, sum_jacob] = accum_diff_and_hessian_inv(cuboid, in
         sum_diff = sum_diff + (ground_truth(i) - gt * ft) * jacob; 
         sum_hess = sum_hess + jacob' * jacob;
         sum_jacob = sum_jacob + jacob;
+        % is_right = check_grad_ft(cuboid, pixel_loc, intrinsic_param, extrinsic_param, plane_ind);
+        % is_right = check_grad_gt(cuboid, pixel_loc, intrinsic_param, extrinsic_param, plane_ind);
     end
-    sum_diff = sum_diff / num_inv;
-    sum_hess = sum_hess / num_inv;
 end
 function delta = get_delta_from_diff_and_hess(sum_diff, sum_hess, activation_label)
     if isnan(sum_diff) | isnan(sum_hess)
@@ -263,11 +268,13 @@ function cuboid = rotate_degree_to_cuboid(cuboid, degree)
     cuboid = generate_center_cuboid_by_params(params);
 end
 function sign_rec = judge_sign(cuboid, pts_3d, plane_ind)
+    global sigmoid_m sigmoid_bias
+    th = - sigmoid_bias / sigmoid_m;
     A = get_transformation_matrix(cuboid, plane_ind);
     pts_3d = (A * pts_3d')'; sign_rec = zeros(size(pts_3d,1),1);
-    sign_rec(pts_3d(:,1)<=0) = -1; sign_rec(pts_3d(:,1)>0) = 1;
+    sign_rec(pts_3d(:,1)<=th) = -1; sign_rec(pts_3d(:,1)>th) = 1;
 end
-function [plane_type_rec, stop_flag] = judege_plane(cuboid, intrinsic, extrinsic, pixel_loc)
+function [plane_type_rec, stop_flag, selector] = judege_plane(cuboid, intrinsic, extrinsic, pixel_loc)
     % figure(1); clf;
     params = generate_cubic_params(cuboid); stop_flag = false;
     theta = params(1); xc = params(2); yc = params(3); l = params(4); w = params(5); h = params(6);
@@ -288,8 +295,12 @@ function [plane_type_rec, stop_flag] = judege_plane(cuboid, intrinsic, extrinsic
             % draw_cuboid(cuboid); hold on; cmap = colormap; color_map_ind = map_vector_to_colormap(x1_sv(:,1), cmap);
             % scatter3(x1_sv(:,1), x1_sv(:,2), x1_sv(:,3), 3, cmap(color_map_ind, :), 'fill');
             % x1_sv = x1;
+            try
             x1 = (A * x1')'; selector = x1(:,1) <= l; 
             plane_type_rec(selector) = 1;
+            catch
+                a = 1;
+            end
         end
         if plane_ind == 2
             A = get_transformation_matrix(cuboid, plane_ind);
@@ -302,9 +313,10 @@ function [plane_type_rec, stop_flag] = judege_plane(cuboid, intrinsic, extrinsic
     end
     if sum(plane_type_rec~=0) ~= length(plane_type_rec)
         % stop_flag = true;
-        plane_type_rec(plane_type_rec==0) 
+        selector = (plane_type_rec~=0);
+    else
+        selector = true(length(plane_type_rec), 1);
     end
-    
 end
 function cuboid = add_transformation_matrix_to_cuboid(cuboid)
     params = generate_cubic_params(cuboid);
@@ -847,7 +859,7 @@ function grad = grad_d(plane_param, pixel_loc, intrinsic, extrinsic)
         (a' * z4) * (p1 * a' * z1 + p2 * a' * z2 + a' * z3)^(-2) * ...
         (p1 * z1' + p2 * z2' + z3');
 end
-function [diff, diff_true] = calculate_diff_inv(cuboid, pixel_loc_batch, intrinsic, extrinsic, gt_batch, plane_ind_batch, num_inv)
+function [diff, diff_true] = calculate_diff_inv(cuboid, pixel_loc_batch, intrinsic, extrinsic, gt_batch, plane_ind_batch)
     params = generate_cubic_params(cuboid);
     diff = 0; diff_true = 0;
     for plane_ind = 1 : 2
@@ -864,7 +876,6 @@ function [diff, diff_true] = calculate_diff_inv(cuboid, pixel_loc_batch, intrins
 
         ft = cal_func_ft(params, t, plane_ind);
         diff = diff + sum((gt - ft .* d).^2); diff_true = diff_true + sum((gt - d).^2);
-        diff = diff / num_inv;
         % cmap = colormap; color_map_ind = map_vector_to_colormap(ft, cmap);
         % figure(2); clf; draw_cubic_shape_frame(cuboid); hold on; scatter3(x(:,1),x(:,2),x(:,3),40,cmap(color_map_ind,:),'fill');
     end
@@ -890,12 +901,16 @@ function ft = cal_func_ft(params, t, plane_ind)
     if plane_ind == 2
         ft = sigmoid_func(t, w);
     end
-    
-    ft = 2 * (ft - 1/2);
+    if t >= 0
+        ft = 2 * (ft - 1/2);
+    else
+        ft = 1 / 2 * t;
+    end
 end
 function [sig_val, m] = sigmoid_func(t, norm_length)
+    global sigmoid_m sigmoid_bias
     l = norm_length; th_ = 20; sig_val = zeros(size(t,1), 1);
-    m = 10; bias = 5; selector = t < th_;
+    m = sigmoid_m; bias = sigmoid_bias; selector = t < th_;
     sig_val(selector) = exp(m / l .* t(selector) + bias) ./ (exp(m / l .* t(selector) + bias) + 1);
     sig_val(~selector) = 1;
     % sig_val = 2 * (exp(m / l .* t) ./ (exp(m / l .* t) + 1) - 1/2);

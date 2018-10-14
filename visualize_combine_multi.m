@@ -975,7 +975,7 @@ function ft = cal_func_ft(params, t, plane_ind)
 end
 function [sig_val, m] = sigmoid_func(t, norm_length)
     l = norm_length; th_ = 20; sig_val = zeros(size(t,1), 1);
-    m = 10; bias = 5; selector = t < th_;
+    m = 10; bias = 0; selector = t < th_;
     sig_val(selector) = exp(m / l .* t(selector) + bias) ./ (exp(m / l .* t(selector) + bias) + 1);
     sig_val(~selector) = 1;
     % sig_val = 2 * (exp(m / l .* t) ./ (exp(m / l .* t) + 1) - 1/2);
@@ -1132,8 +1132,9 @@ function grad = pixel_grad_x_(M, x)
     grad = [gx; gy];
 end
 function grad = image_grad_(image, location)
-    x_grad = interpImg(image, [location(1) + 1, location(2)]) - interpImg(image, [location(1), location(2)]);
-    y_grad = interpImg(image, [location(1), location(2) + 1]) - interpImg(image, [location(1), location(2)]);
+    step_size = 1;
+    x_grad = interpImg(image, [location(1) + step_size, location(2)]) - interpImg(image, [location(1), location(2)]) / step_size;
+    y_grad = interpImg(image, [location(1), location(2) + step_size]) - interpImg(image, [location(1), location(2)]) / step_size;
     grad = [x_grad y_grad];
 end
 

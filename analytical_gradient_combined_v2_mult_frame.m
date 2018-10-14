@@ -1,8 +1,10 @@
 function [sum_diff, sum_hess, sum_loss] = analytical_gradient_combined_v2_mult_frame(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pt_3d, activation_label)
+    global sigmoid_m sigmoid_bias
+    sigmoid_m = 10; sigmoid_bias = 4;
     ratio = 1.5; activation_label = (activation_label == 1);
     [params, gt, pixel_loc] = make_preparation(cuboid, extrinsic_param, intrinsic_param, linear_ind, depth_map); 
     % ratio_regularization = 100000;
-    ratio_regularization = 1000000;
+    ratio_regularization = 10000000;
     
     [plane_ind_batch, cuboid, selector] = sub_preparation(intrinsic_param, extrinsic_param, pixel_loc, params);
     pixel_loc = pixel_loc(selector, :); linear_ind = linear_ind(selector); plane_ind_batch = plane_ind_batch(selector);
@@ -15,7 +17,7 @@ function [sum_diff, sum_hess, sum_loss] = analytical_gradient_combined_v2_mult_f
     loss1 = calculate_diff_inv(cuboid, pixel_loc, intrinsic_param, extrinsic_param, gt, plane_ind_batch);
     loss2 = calculate_diff_pos_v2(depth_map, intrinsic_param, extrinsic_param, visible_pt_3d, params, ratio);
     sum_diff = sum_diff1 + sum_diff2 + sum_diff3; sum_hess = sum_hess1 + sum_hess2 + sum_hess3; sum_loss = loss1 + loss2;
-    
+    % sum_diff = sum_diff1 + 0 + sum_diff3; sum_hess = sum_hess1 + 0 + sum_hess3; sum_loss = loss1 + 0;
 end
 function [loss, diff, grad] = regularized_term_grad_loss(ratio, activation_label)
     loss = 0; diff = 0;
@@ -266,9 +268,11 @@ function cuboid = rotate_degree_to_cuboid(cuboid, degree)
     cuboid = generate_center_cuboid_by_params(params);
 end
 function sign_rec = judge_sign(cuboid, pts_3d, plane_ind)
+    global sigmoid_m sigmoid_bias
+    th = - sigmoid_bias / sigmoid_m;
     A = get_transformation_matrix(cuboid, plane_ind);
     pts_3d = (A * pts_3d')'; sign_rec = zeros(size(pts_3d,1),1);
-    sign_rec(pts_3d(:,1)<=0) = -1; sign_rec(pts_3d(:,1)>0) = 1;
+    sign_rec(pts_3d(:,1)<=th) = -1; sign_rec(pts_3d(:,1)>th) = 1;
 end
 function [plane_type_rec, stop_flag, selector] = judege_plane(cuboid, intrinsic, extrinsic, pixel_loc)
     % figure(1); clf;
@@ -897,12 +901,12 @@ function ft = cal_func_ft(params, t, plane_ind)
     if plane_ind == 2
         ft = sigmoid_func(t, w);
     end
-    
     ft = 2 * (ft - 1/2);
 end
 function [sig_val, m] = sigmoid_func(t, norm_length)
+    global sigmoid_m sigmoid_bias
     l = norm_length; th_ = 20; sig_val = zeros(size(t,1), 1);
-    m = 10; bias = 0; selector = t < th_;
+    m = sigmoid_m; bias = sigmoid_bias; selector = t < th_;
     sig_val(selector) = exp(m / l .* t(selector) + bias) ./ (exp(m / l .* t(selector) + bias) + 1);
     sig_val(~selector) = 1;
     % sig_val = 2 * (exp(m / l .* t) ./ (exp(m / l .* t) + 1) - 1/2);

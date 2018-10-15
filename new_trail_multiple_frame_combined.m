@@ -87,7 +87,7 @@ end
 function cubic_record_entry = optimize_for_single_obj_set(cubic_record_entry, objs, depth_cluster, frame_num, obj_ind)
     global path_mul
     save([path_mul num2str(frame_num) '_' num2str(obj_ind) '.mat'])
-    % load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/cubic_shape_estimation/13_Oct_2018_22_mul/3_8.mat');
+    % load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/cubic_shape_estimation/15_Oct_2018_09_mul/21_11.mat');
     activation_label = cubic_record_entry.activation_label; depth_cluster = image_blur(depth_cluster);
     sz_depth_map = size(depth_cluster.depth_maps{1}); it_num = 200; loss_record = zeros(it_num, 1); cuboid_record = cell(it_num, 1);
     delta_record_norm = zeros(it_num, 1);
@@ -126,7 +126,7 @@ function cubic_record_entry = optimize_for_single_obj_set(cubic_record_entry, ob
     save_visualize(cubic_record_entry, t_objs, it_num, frame_num, obj_ind);
     if ~isempty(t_objs)
         save_stem(loss_record, frame_num, obj_ind);
-        figure(1); clf; stem(loss_record,'filled')
+        % figure(1); clf; stem(loss_record,'filled')
     end
 end
 function depth_map_cluster = image_blur(depth_map_cluster)

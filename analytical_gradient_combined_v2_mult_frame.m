@@ -747,7 +747,11 @@ function grad = grad_ft(params, grad_t_theta, t, plane_ind)
         norm_length = w;
         grad_cons = grad_cons';
     end
-    grad = 2 * ft * (1 - ft) * ( t * grad_cons + m / norm_length * grad_t_theta);
+    if ft >= 0
+        grad = 2 * ft * (1 - ft) * ( t * grad_cons + m / norm_length * grad_t_theta);
+    else
+        grad = 1 / 2 * ( t * grad_cons + m / norm_length * grad_t_theta);
+    end
 end
 function grad = grad_c(params, plane_ind)
     if plane_ind == 1
@@ -896,19 +900,23 @@ function ft = cal_func_ft(params, t, plane_ind)
     % params = generate_cubic_params(cuboid);
     theta = params(1); xc = params(2); yc = params(3); l = params(4); w = params(5); h = params(6);
     if plane_ind == 1
-        ft = sigmoid_func(t, l);
+        [ft, ~, t_vals] = sigmoid_func(t, l);
     end
     if plane_ind == 2
-        ft = sigmoid_func(t, w);
+        [ft, ~, t_vals] = sigmoid_func(t, w);
     end
-    ft = 2 * (ft - 1/2);
+    if ft >= 1 / 2
+        ft = 2 * (ft - 1/2);
+    else
+        ft = 1 / 2 * t_vals;
+    end
 end
-function [sig_val, m] = sigmoid_func(t, norm_length)
+function [sig_val, m, t_vals] = sigmoid_func(t, norm_length)
     global sigmoid_m sigmoid_bias
     l = norm_length; th_ = 20; sig_val = zeros(size(t,1), 1);
     m = sigmoid_m; bias = sigmoid_bias; selector = t < th_;
     sig_val(selector) = exp(m / l .* t(selector) + bias) ./ (exp(m / l .* t(selector) + bias) + 1);
-    sig_val(~selector) = 1;
+    sig_val(~selector) = 1; t_vals = m / l .* t(selector) + bias;
     % sig_val = 2 * (exp(m / l .* t) ./ (exp(m / l .* t) + 1) - 1/2);
 end
 function t = calculate_distance_t(c, x, cuboid, plane_ind)

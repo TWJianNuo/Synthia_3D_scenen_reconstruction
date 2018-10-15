@@ -87,7 +87,7 @@ end
 function cubic_record_entry = optimize_for_single_obj_set(cubic_record_entry, objs, depth_cluster, frame_num, obj_ind)
     global path_mul
     save([path_mul num2str(frame_num) '_' num2str(obj_ind) '.mat'])
-    % load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/cubic_shape_estimation/13_Oct_2018_15_mul/1_8.mat');
+    % load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/cubic_shape_estimation/13_Oct_2018_22_mul/3_8.mat');
     activation_label = cubic_record_entry.activation_label; depth_cluster = image_blur(depth_cluster);
     sz_depth_map = size(depth_cluster.depth_maps{1}); it_num = 200; loss_record = zeros(it_num, 1); cuboid_record = cell(it_num, 1);
     delta_record_norm = zeros(it_num, 1);
@@ -248,7 +248,7 @@ function save_stem(loss_record, frame_num, obj_ind)
 end
 function save_visualize(cubic_record_entry, objs, it_num, frame_num, obj_ind)
     global path_mul axis_param_vi
-    if mod(it_num, 1) == 0
+    if mod(it_num, 10) == 0
         figure('visible', 'off'); clf; draw_cubic_shape_frame(cubic_record_entry.cuboid); hold on;
         pts_cubic = cubic_record_entry.visible_pts;
         scatter3(pts_cubic(:,1), pts_cubic(:,2), pts_cubic(:,3), 3, 'r', 'fill'); hold on;
@@ -323,7 +323,7 @@ function visualize_inner_sit(cuboid, cur_obj, depth_map, visible_pts, activation
     % [x_inv_record, dominate_pts, dominate_color] = visualize_combine_multi(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pts, activation_label, color1, color2);
     [x_inv_record, dominate_pts, dominate_color] = visualize_combine_multi(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pts, activation_label);
     [depth_map_projected] = map_pts_to_depth_map(cur_obj.extrinsic_params, cur_obj.intrinsic_params, cur_obj.affine_matrx, dominate_pts, depth_map, dominate_color);
-    % hold on; scatter3(pts_3d(:,1), pts_3d(:,2), pts_3d(:,3), 4, 'k', 'fill');
+    hold on; scatter3(pts_3d(:,1), pts_3d(:,2), pts_3d(:,3), 4, 'k', 'fill');
     figure(2); clf; imshow(depth_map_projected)
 end
 function [depth_map, pts_2d] = map_pts_to_depth_map(extrinsic, intrinsic, affine, pts, depth_map, colors)
